@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.4.1';
+const GEC_VERSION = '1.5.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -34,10 +34,11 @@ const GEC_I18N = {
     service_overdue: 'Service overdue', service_today: 'Service today', service_tomorrow: 'Service tomorrow',
     service_days: 'Service in {n} days', service_km: 'Service in {n} km',
     battery_range: 'Battery & range', full_range: 'Full charge: {n} km', km: 'km', kw: 'kW', min: 'min', h: 'h',
-    charging: 'Charging', plugged: 'Plugged in', power: 'Power', to_full: 'Until full',
+    charging: 'Charging', plugged: 'Plugged in', unplugged: 'Not plugged in', power: 'Power', to_full: 'Until full',
     temperature: 'Temperature', cabin: 'Cabin', outside: 'Outside', tires: 'Tire pressure',
     unlock: 'Unlock', lock: 'Lock', precond: 'Pre-condition', climate_off: 'Climate off', start_charge: 'Start charging',
     stop_charge: 'Stop charging', find: 'Find car', refresh: 'Refresh',
+    charger_ctrl_1: 'Charger', charger_ctrl_2: 'control',
     odometer: 'Odometer', to_service: 'To service', consumption: 'Consumption', last_trip: 'Last trip', kwh100: 'kWh/100 km',
     seat_heat_driver: 'Driver seat heating', seat_heat_passenger: 'Passenger seat heating',
     seat_vent_driver: 'Driver seat ventilation', seat_vent_passenger: 'Passenger seat ventilation',
@@ -66,10 +67,11 @@ const GEC_I18N = {
     service_overdue: 'טיפול באיחור', service_today: 'טיפול היום', service_tomorrow: 'טיפול מחר',
     service_days: 'טיפול בעוד {n} ימים', service_km: 'טיפול בעוד {n} ק״מ',
     battery_range: 'סוללה וטווח', full_range: 'בטעינה מלאה {n} ק״מ', km: 'ק״מ', kw: 'קו״ט', min: 'דק׳', h: 'שע׳',
-    charging: 'בטעינה', plugged: 'מחובר למטען', power: 'הספק', to_full: 'עד טעינה מלאה',
+    charging: 'בטעינה', plugged: 'מחובר למטען', unplugged: 'לא מחובר למטען', power: 'הספק', to_full: 'עד טעינה מלאה',
     temperature: 'טמפרטורה', cabin: 'בתא', outside: 'בחוץ', tires: 'לחץ צמיגים',
     unlock: 'פתח נעילה', lock: 'נעל', precond: 'מיזוג מראש', climate_off: 'כבה מיזוג', start_charge: 'התחל טעינה',
     stop_charge: 'עצור טעינה', find: 'מצא רכב', refresh: 'רענן',
+    charger_ctrl_1: 'שליטת', charger_ctrl_2: 'עמדת טעינה',
     odometer: 'מד מרחק', to_service: 'לטיפול', consumption: 'צריכה', last_trip: 'נסיעה אחרונה', kwh100: 'קוט״ש/100',
     seat_heat_driver: 'חימום מושב נהג', seat_heat_passenger: 'חימום מושב נוסע',
     seat_vent_driver: 'אוורור מושב נהג', seat_vent_passenger: 'אוורור מושב נוסע',
@@ -115,6 +117,16 @@ class Geely3DCard extends HTMLElement {
       return id;
     };
     for (const key of Object.keys(c)) if (key.endsWith('_entity')) entityOpt(key);
+    const chargeDomains = ['button', 'switch', 'script', 'input_button'];
+    const chargeOpt = (key, domains = chargeDomains) => {
+      const id = entityOpt(key);
+      if (!id) return null;
+      const domain = id.split('.')[0];
+      if (!domains.includes(domain)) {
+        throw new Error(`geely-3d-card: "${key}" must be a ${domains.join(', ')} entity`);
+      }
+      return id;
+    };
     this._raw = c;
     this._cfg = {
       title: c.title || null,
@@ -125,6 +137,9 @@ class Geely3DCard extends HTMLElement {
       service_days: c.service_warning_days ?? 14,
       service_km: c.service_warning_km ?? 1000,
       low_bar: c.low_tire_bar ?? 2.3,
+      charge_start: chargeOpt('charge_start_entity'),
+      charge_stop: chargeOpt('charge_stop_entity'),
+      charger_switch: chargeOpt('charger_switch_entity', ['switch']),
     };
     this._sig = null;
     this._prof = null;
@@ -252,9 +267,10 @@ class Geely3DCard extends HTMLElement {
 
   _signature(dark) {
     const p = `.${this._cfg.prefix}_`, clim = this._climateId();
+    const extra = [this._chargeStartId(), this._chargeStopId()].filter(Boolean);
     const parts = [this._lang, dark ? 'd' : 'l', Math.floor(Date.now() / 60000)];
     for (const [id, s] of Object.entries(this._hass.states)) {
-      if (id.includes(p) || id === clim) parts.push(id, s.state, s.attributes.current_position);
+      if (id.includes(p) || id === clim || extra.includes(id)) parts.push(id, s.state, s.attributes.current_position);
     }
     return parts.join('|');
   }
@@ -324,6 +340,29 @@ class Geely3DCard extends HTMLElement {
   .tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
   .tile { background:var(--zc-pan); border:1px solid var(--zc-brd); border-radius:12px; padding:10px 12px; cursor:pointer; min-width:0; }
   .tile.wide { grid-column:1 / -1; }
+  .chg-btns { display:flex; align-items:center; gap:8px; margin-top:10px; }
+  .chg-label { flex:none; display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:1px; color:var(--zc-mut); font:500 10.5px var(--zc-font); line-height:1.2; text-align:center;
+    pointer-events:none; user-select:none; }
+  .chg-label ha-icon { --mdc-icon-size:14px; opacity:.8; margin-bottom:1px; }
+  .chg-label-text { display:flex; flex-direction:column; align-items:center; white-space:nowrap; }
+  .chg-btn { flex:1; min-width:0; border:1px solid var(--zc-brd); background:var(--zc-pan2); color:var(--zc-fg);
+    font:600 13px var(--zc-font); padding:8px 10px; border-radius:10px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px; touch-action:manipulation;
+    transition:background .15s, transform .1s, opacity .15s; }
+  .chg-btn ha-icon { --mdc-icon-size:16px; }
+  .chg-btn:active:not([disabled]) { transform:scale(.97); }
+  .chg-btn.start { color:var(--zc-teal); border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent);
+    background:color-mix(in srgb, var(--zc-teal) 14%, transparent); }
+  .chg-btn.stop { color:var(--zc-red); border-color:color-mix(in srgb, var(--zc-red) 45%, transparent);
+    background:color-mix(in srgb, var(--zc-red) 14%, transparent); }
+  .chg-btn[disabled] { opacity:.4; pointer-events:none; cursor:not-allowed; }
+  @container (max-width: 420px) {
+    .chg-btns { gap:6px; }
+    .chg-label { font-size:10px; }
+    .chg-label ha-icon { --mdc-icon-size:13px; }
+    .chg-btn { padding:8px 7px; font-size:12.5px; gap:4px; }
+  }
   .lbl { font-size:12px; color:var(--zc-mut); display:flex; align-items:center; gap:5px; }
   .lbl ha-icon { --mdc-icon-size:15px; }
   .big { font-size:22px; font-weight:700; line-height:1.15; }
@@ -533,6 +572,8 @@ class Geely3DCard extends HTMLElement {
         this._confirm(this._t(on ? 'c_stop' : 'c_start'), () => this._svc('switch', on ? 'turn_off' : 'turn_on', { entity_id: chg }, on ? 't_stop' : 't_start'));
         break;
       }
+      case 'charge_start': this._chargeAct(true); break;
+      case 'charge_stop': this._chargeAct(false); break;
       case 'find': this._svc('button', 'press', { entity_id: this._id('button', 'find_car') }, 't_find'); break;
       case 'refresh': this._svc('button', 'press', { entity_id: this._id('button', 'refresh_data') }, 't_refresh'); break;
       case 'press': this._confirm(this._t('c_' + d.key), () => this._svc('button', 'press', { entity_id: d.ent })); break;
@@ -544,6 +585,39 @@ class Geely3DCard extends HTMLElement {
         break;
       }
     }
+  }
+
+  _chargeStartId() { return this._cfg.charge_start || this._cfg.charger_switch || null; }
+  _chargeStopId() { return this._cfg.charge_stop || this._cfg.charger_switch || null; }
+  _entOk(id) {
+    const s = this._s(id);
+    return !!(s && String(s.state).toLowerCase() !== 'unavailable');
+  }
+  _chargeAct(start) {
+    const id = start ? this._chargeStartId() : this._chargeStopId();
+    if (!this._entOk(id)) { this._toast(this._t('unavailable')); return; }
+    this._confirm(this._t(start ? 'c_start' : 'c_stop'), () => this._callCharge(id, start));
+  }
+  _callCharge(id, start) {
+    const domain = String(id).split('.')[0];
+    const msg = start ? 't_start' : 't_stop';
+    const data = { entity_id: id };
+    if (domain === 'button' || domain === 'input_button') this._svc(domain, 'press', data, msg);
+    else if (domain === 'switch') this._svc('switch', start ? 'turn_on' : 'turn_off', data, msg);
+    else if (domain === 'script') this._svc('script', 'turn_on', data, msg);
+    else this._toast(this._t('t_err', { m: domain || this._t('t_failed') }));
+  }
+  _chgButtonsHtml() {
+    const startId = this._chargeStartId(), stopId = this._chargeStopId();
+    if (!startId && !stopId) return '';
+    const btn = (act, cls, icon, label, id) => {
+      const ok = this._entOk(id);
+      const dis = ok ? '' : 'disabled';
+      const title = ok ? '' : ` title="${this._esc(this._t('unavailable'))}"`;
+      return `<button type="button" class="chg-btn ${cls}" data-act="${this._esc(act)}" ${dis}${title}><ha-icon icon="${this._esc(icon)}"></ha-icon><span>${this._esc(label)}</span></button>`;
+    };
+    const label = `<span class="chg-label"><ha-icon icon="mdi:ev-station"></ha-icon><span class="chg-label-text"><span>${this._esc(this._t('charger_ctrl_1'))}</span><span>${this._esc(this._t('charger_ctrl_2'))}</span></span></span>`;
+    return `<div class="chg-btns">${label}${btn('charge_start', 'start', 'mdi:power-plug', this._t('start_charge'), startId)}${btn('charge_stop', 'stop', 'mdi:power-plug-off', this._t('stop_charge'), stopId)}</div>`;
   }
 
   /* ---------- render ---------- */
@@ -622,13 +696,17 @@ class Geely3DCard extends HTMLElement {
         <div><div class="big">${fpct != null ? this._fmt(fpct) + '%' : this._fmt(fl, 1) + `<small>${T('litres')}</small>`}</div><div class="muted">${fpct != null && fl != null ? this._fmt(fl, 1) + ' ' + T('litres') : ''}</div></div></div>
         ${fpct != null ? `<div class="bar"><i style="width:${Math.max(0, Math.min(100, fpct)).toFixed(0)}%;background:${fcol}"></i></div>` : ''}</div>`);
     }
+    const chgBtns = this._chgButtonsHtml();
     if (showChg) {
       const pw = this._n(I('charging_power')), ttf = this._n(I('time_to_full_charge'));
       const ttfS = ttf == null ? '—' : ttf >= 60 ? `${Math.floor(ttf / 60)}:${String(Math.round(ttf % 60)).padStart(2, '0')} ${T('h')}` : `${this._fmt(ttf)} ${T('min')}`;
       tiles.push(`<div class="tile wide" data-more="${esc(I('charging_power'))}" style="border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent)">
         <div class="lbl" style="color:var(--zc-teal)"><ha-icon icon="mdi:ev-plug-type2"></ha-icon>${T(charging ? 'charging' : 'plugged')}</div>
         <div class="temps"><div><div class="big">${this._fmt(pw, 1)}<small>${T('kw')}</small></div><div class="muted">${T('power')}</div></div>
-        <div><div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div></div></div></div>`);
+        <div><div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div></div></div>${chgBtns}</div>`);
+    } else if (chgBtns) {
+      tiles.push(`<div class="tile wide" style="border-color:color-mix(in srgb, var(--zc-mut) 45%, transparent)">
+        <div class="lbl" style="color:var(--zc-mut)"><ha-icon icon="mdi:power-plug-off-outline"></ha-icon>${T('unplugged')}</div>${chgBtns}</div>`);
     }
     const tin = this._n(I('interior_temperature')), tout = this._n(I('exterior_temperature'));
     tiles.push(`<div class="tile" data-more="${esc(clim || I('interior_temperature'))}"><div class="lbl"><ha-icon icon="mdi:thermometer"></ha-icon>${T('temperature')}</div>

@@ -21,6 +21,7 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
 - Battery ring (color by level), electric range and range at full charge
 - **PHEV:** fuel tile (fuel %, litres, fuel range) and total combined range; fuel-flap-open warning
 - Charging panel (power, time to full) – shown only while plugged in / charging
+- Optional **charger control**: Start/Stop buttons for a wall charger in Home Assistant (any integration), with confirmation. Hidden unless you configure the entities
 - Lock state with lock / unlock button (unlock asks for confirmation)
 - Red warning chips for open doors, trunk, hood, windows, sunroof and fuel flap
 - Service warning chip (days or km to service)
@@ -128,6 +129,9 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `service_warning_days` | number | `14` | Show the service chip when days to service ≤ this |
 | `service_warning_km` | number | `1000` | …or when distance to service ≤ this (km) |
 | `low_tire_bar` | number | `2.3` | Tire pressure (bar) below which a tire is highlighted |
+| `charge_start_entity` | string | – | Optional. Entity that starts the wall charger (`button`, `switch`, `script` or `input_button`) |
+| `charge_stop_entity` | string | – | Optional. Entity that stops the wall charger (same domains) |
+| `charger_switch_entity` | string | – | Optional. A single `switch` used for both start (`turn_on`) and stop (`turn_off`). Used for a side if the matching start/stop entity is not set |
 
 ### Example
 
@@ -140,6 +144,31 @@ color: silver
 ```
 
 In a sections view the card takes the full width of its section. Give the section `column_span: 2` or more to get the two-column layout.
+
+### Charger control (optional)
+
+If you have a wall charger in Home Assistant, you can add Start/Stop charging buttons inside the charging bubble. This works with any charger integration that exposes a button, switch, script or `input_button` (for example BENY, Wallbox, OCPP or Easee). The car's own charging action button is unchanged. The car's plug sensor remains the source of truth for plugged / not plugged in.
+
+Leave these options unset and the card looks and behaves exactly as before.
+
+Separate start and stop entities:
+
+```yaml
+type: custom:geely-3d-card
+entity_prefix: my_geely_ex5_1234
+charge_start_entity: button.my_charger_start
+charge_stop_entity: button.my_charger_stop
+```
+
+Or a single switch:
+
+```yaml
+type: custom:geely-3d-card
+entity_prefix: my_geely_ex5_1234
+charger_switch_entity: switch.my_charger
+```
+
+A confirmation is shown before the command is sent. A button is greyed out if its entity is unavailable. When the car is unplugged, the bubble stays visible (muted “Not plugged in”) so you can still reach the charger buttons.
 
 ### Entities used
 
@@ -180,12 +209,27 @@ EX5 – Hebrew (RTL), desktop:
 - דגם הרכב מזוהה אוטומטית. אפשר לקבוע אותו ידנית עם `model`.
 - תמונות הרכב אינן כלולות במאגר (זכויות יוצרים של Geely). הורידו אותן עם `scripts/fetch-images.sh` והעתיקו ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
 - כרטיס לא רשמי, ללא קשר ל-Geely.
+- אופציונלי: אם יש לכם עמדת טעינה ב-Home Assistant, אפשר להוסיף כפתורי התחל/עצור טעינה עם `charge_start_entity` ו-`charge_stop_entity`, או מתג אחד עם `charger_switch_entity`.
 
 ```yaml
 type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
 language: he
 ```
+
+## Changelog
+
+### 1.5.0
+- Optional charger control: configure `charge_start_entity` and `charge_stop_entity` (a `button`, `switch`, `script` or `input_button`), or a single `charger_switch_entity`. Start/Stop buttons appear in the charging bubble, with confirmation. Works with any charger integration in Home Assistant (for example BENY, Wallbox, OCPP or Easee). The car's own charging action is unchanged.
+- When charger control is configured and the car is unplugged, the bubble shows a muted “Not plugged in” / “לא מחובר למטען” status. The car's plug sensor is the source of truth.
+- If those options are omitted, the card renders exactly as before.
+
+### 1.4.1
+- Escape card-config values interpolated into HTML, and validate `entity_prefix` and `*_entity` keys in `setConfig`.
+- README install section leads with Marketplace / HACS catalog search.
+
+### 1.4.0
+- Geely E5 360° support, and a fix for the `geely-ex5-card` compatibility alias.
 
 ## Disclaimer
 
