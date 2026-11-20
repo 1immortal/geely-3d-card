@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.4.0';
+const GEC_VERSION = '1.4.1';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -103,12 +103,24 @@ class Geely3DCard extends HTMLElement {
   setConfig(config) {
     const c = config || {};
     if (!c.entity_prefix) throw new Error(GEC_I18N.en.no_prefix);
+    const prefix = String(c.entity_prefix).trim().toLowerCase().replace(/^[a-z][a-z0-9_]*\./, '');
+    if (!/^[a-z0-9_]+$/.test(prefix)) {
+      throw new Error('geely-3d-card: "entity_prefix" may only contain lowercase letters, digits and underscores');
+    }
+    const entityIdRe = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/;
+    const entityOpt = (key) => {
+      if (c[key] == null || String(c[key]).trim() === '') return null;
+      const id = String(c[key]).trim().toLowerCase();
+      if (!entityIdRe.test(id)) throw new Error(`geely-3d-card: "${key}" must be a valid entity id`);
+      return id;
+    };
+    for (const key of Object.keys(c)) if (key.endsWith('_entity')) entityOpt(key);
     this._raw = c;
     this._cfg = {
       title: c.title || null,
       model: String(c.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_'),
-      prefix: String(c.entity_prefix).replace(/^[a-z_]+\./, ''),
-      climate: c.climate_entity || null,
+      prefix,
+      climate: entityOpt('climate_entity'),
       language: (c.language || 'auto').toLowerCase(),
       service_days: c.service_warning_days ?? 14,
       service_km: c.service_warning_km ?? 1000,
@@ -145,7 +157,25 @@ class Geely3DCard extends HTMLElement {
   _n(id) { const v = this._v(id); const n = v == null ? NaN : parseFloat(v); return isFinite(n) ? n : null; }
   _on(id) { return this._v(id) === 'on'; }
   _fmt(n, d = 0) { return n == null ? '—' : Number(n).toLocaleString(this._locale, { maximumFractionDigits: d, minimumFractionDigits: d }); }
-  _esc(t) { return String(t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+  _esc(t) { return String(t ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+  _slug(v) {
+    const s = String(v || '').trim().toLowerCase();
+    return /^[a-z0-9][a-z0-9_-]*$/.test(s) ? s : '';
+  }
+  _extOf(v, fallback) {
+    const s = String(v || '').trim().toLowerCase().replace(/^\./, '');
+    return /^[a-z0-9]+$/.test(s) ? s : fallback;
+  }
+  _cssColor(v) {
+    if (v == null || v === '' || v === false) return null;
+    const s = String(v).trim();
+    if (s === 'null' || s === 'none') return null;
+    if (s === 'transparent') return 'transparent';
+    if (/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return s;
+    if (/^(?:rgb|hsl)a?\(\s*[\d.]+%?(?:\s*,\s*[\d.]+%?){2,3}(?:\s*,\s*[\d.]+%?)?\s*\)$/i.test(s)) return s;
+    if (/^[a-z]+$/i.test(s)) return s.toLowerCase();
+    return null;
+  }
   _rel(iso) {
     if (!iso) return null;
     const t = Date.parse(iso); if (!isFinite(t)) return null;
@@ -172,18 +202,18 @@ class Geely3DCard extends HTMLElement {
   _profile() {
     if (this._prof) return this._prof;
     const c = this._raw, key = this._detectModel(), m = GEC_MODELS[key];
-    const color = c.color || m.color;
+    const color = this._slug(c.color) || m.color;
     const single = c.car_image || null;
     let frames = Number(c.frames) || (single ? 1 : m.frames);
     let base = c.image_base || (color ? `/local/geely-ex5/${key}/${color}/` : null);
-    if (base) base = base.replace(/\/?$/, '/');
+    if (base) base = String(base).replace(/\/?$/, '/');
     if (!single && !base) frames = 0;
     this._prof = {
       key, name: m.name, drive: m.drive, frames, base, single,
-      ext: c.image_ext || m.ext,
+      ext: this._extOf(c.image_ext, m.ext),
       start: Number(c.start_frame) || m.start,
       direction: Number(c.rotate_direction) || m.direction,
-      studio: c.image_background !== undefined ? c.image_background : m.studio,
+      studio: c.image_background !== undefined ? this._cssColor(c.image_background) : m.studio,
     };
     return this._prof;
   }
@@ -238,7 +268,7 @@ class Geely3DCard extends HTMLElement {
     this._pos = Math.min(Math.max(P.start, 1), Math.max(N, 1)) - 1;
     let imgs = '';
     if (P.single) imgs = `<img draggable="false" alt="" src="${this._esc(P.single)}" data-f="0">`;
-    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${P.base}${i}.${P.ext}" data-f="${i - 1}">`;
+    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._esc((P.base || '') + i + '.' + P.ext)}" data-f="${i - 1}">`;
     if (!N) imgs = '<div class="ph"><ha-icon icon="mdi:car-side"></ha-icon></div>';
     root.innerHTML = `
 <style>
@@ -528,35 +558,35 @@ class Geely3DCard extends HTMLElement {
     const connected = this._on(B('connected'));
     const eng = (this._v(I('engine_state')) || '').toLowerCase();
     const sub = [`<span class="dot ${connected ? '' : 'off'}"></span>${T(connected ? 'connected' : 'disconnected')}`];
-    if (loc) sub.push(`<span data-more="${trk.entity_id}" style="cursor:pointer">· ${esc(loc)}</span>`);
+    if (loc) sub.push(`<span data-more="${esc(trk.entity_id)}" style="cursor:pointer">· ${esc(loc)}</span>`);
     if (eng === 'on' || eng === 'running') sub.push('· ' + T('engine_on'));
     else if (eng) sub.push('· ' + T('parked'));
     E.sub.innerHTML = sub.join(' ');
     const upd = this._rel(this._v(I('last_updated')));
     const rep = this._rel(this._v(I('car_reported_at')));
-    E.upd.innerHTML = upd ? `<span data-more="${I('last_updated')}" style="cursor:pointer" title="${rep ? esc(T('car_reported', { t: rep })) : ''}">${esc(T('updated', { t: upd }))}</span>` : '';
+    E.upd.innerHTML = upd ? `<span data-more="${esc(I('last_updated'))}" style="cursor:pointer" title="${rep ? esc(T('car_reported', { t: rep })) : ''}">${esc(T('updated', { t: upd }))}</span>` : '';
 
     // chips
     const chips = [];
     const lockId = this._id('lock', 'doors'), lockS = this._v(lockId);
-    if (lockS === 'locked') chips.push(`<span class="chip ok" data-more="${lockId}"><ha-icon icon="mdi:lock"></ha-icon>${T('locked')}</span>`);
-    else if (lockS) chips.push(`<span class="chip bad" data-more="${lockId}"><ha-icon icon="mdi:lock-open-variant"></ha-icon>${lockS === 'unlocked' ? T('unlocked') : esc(lockS)}</span>`);
+    if (lockS === 'locked') chips.push(`<span class="chip ok" data-more="${esc(lockId)}"><ha-icon icon="mdi:lock"></ha-icon>${T('locked')}</span>`);
+    else if (lockS) chips.push(`<span class="chip bad" data-more="${esc(lockId)}"><ha-icon icon="mdi:lock-open-variant"></ha-icon>${lockS === 'unlocked' ? T('unlocked') : esc(lockS)}</span>`);
     const opens = [['door_driver', 'mdi:car-door'], ['door_passenger', 'mdi:car-door'], ['door_rear_left', 'mdi:car-door'],
       ['door_rear_right', 'mdi:car-door'], ['trunk', 'mdi:car-back'], ['hood', 'mdi:car-lifted-pickup']];
     const flap = this._first('binary_sensor', ['fuel_flap', 'tank_flap']);
-    if (flap && this._on(flap)) chips.push(`<span class="chip bad" data-more="${flap}"><ha-icon icon="mdi:gas-station"></ha-icon>${T('fuel_flap')}</span>`);
-    for (const [k, ic] of opens) if (this._on(B(k))) chips.push(`<span class="chip bad" data-more="${B(k)}"><ha-icon icon="${ic}"></ha-icon>${T(k)}</span>`);
+    if (flap && this._on(flap)) chips.push(`<span class="chip bad" data-more="${esc(flap)}"><ha-icon icon="mdi:gas-station"></ha-icon>${T('fuel_flap')}</span>`);
+    for (const [k, ic] of opens) if (this._on(B(k))) chips.push(`<span class="chip bad" data-more="${esc(B(k))}"><ha-icon icon="${ic}"></ha-icon>${T(k)}</span>`);
     for (const [k, key] of [['all_windows', 'windows_open'], ['sunroof', 'sunroof_open']]) {
       const s = this._s(this._id('cover', k));
       if (s && (s.state === 'open' || s.state === 'opening' || (s.attributes.current_position || 0) > 0))
-        chips.push(`<span class="chip bad" data-more="${s.entity_id}"><ha-icon icon="mdi:window-open-variant"></ha-icon>${T(key)}</span>`);
+        chips.push(`<span class="chip bad" data-more="${esc(s.entity_id)}"><ha-icon icon="mdi:window-open-variant"></ha-icon>${T(key)}</span>`);
     }
     const days = this._n(I('days_to_service')), dist = this._n(I('distance_to_service'));
     if (days != null && days <= this._cfg.service_days) {
       const t = days < 0 ? T('service_overdue') : days === 0 ? T('service_today') : days === 1 ? T('service_tomorrow') : T('service_days', { n: this._fmt(days) });
-      chips.push(`<span class="chip ${days <= 0 ? 'bad' : 'warn'}" data-more="${I('days_to_service')}"><ha-icon icon="mdi:wrench"></ha-icon>${t}</span>`);
+      chips.push(`<span class="chip ${days <= 0 ? 'bad' : 'warn'}" data-more="${esc(I('days_to_service'))}"><ha-icon icon="mdi:wrench"></ha-icon>${t}</span>`);
     } else if (dist != null && dist <= this._cfg.service_km) {
-      chips.push(`<span class="chip warn" data-more="${I('distance_to_service')}"><ha-icon icon="mdi:wrench"></ha-icon>${T('service_km', { n: this._fmt(dist) })}</span>`);
+      chips.push(`<span class="chip warn" data-more="${esc(I('distance_to_service'))}"><ha-icon icon="mdi:wrench"></ha-icon>${T('service_km', { n: this._fmt(dist) })}</span>`);
     }
     E.chips.innerHTML = chips.join('');
 
@@ -575,7 +605,7 @@ class Geely3DCard extends HTMLElement {
     const combId = this._first('sensor', ['combined_range']);
     const hasFuel = !!(fuelPctId || fuelLId || fuelRngId) && this._profile().drive !== 'bev';
     const comb = combId ? this._n(combId) : null;
-    tiles.push(`<div class="tile wide" data-more="${I('battery')}"><div class="bat">
+    tiles.push(`<div class="tile wide" data-more="${esc(I('battery'))}"><div class="bat">
       <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="31" fill="none" stroke="var(--zc-pan2)" stroke-width="7"/>
         <circle cx="37" cy="37" r="31" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}"/></svg>
         <div class="pct">${bat == null ? '—' : this._fmt(bat) + '%'}</div></div>
@@ -586,7 +616,7 @@ class Geely3DCard extends HTMLElement {
     if (hasFuel) {
       const fpct = fuelPctId ? this._n(fuelPctId) : null, fl = fuelLId ? this._n(fuelLId) : null, fr = fuelRngId ? this._n(fuelRngId) : null;
       const fcol = fpct == null ? 'var(--zc-amber)' : fpct > 25 ? 'var(--zc-amber)' : 'var(--zc-red)';
-      tiles.push(`<div class="tile wide" data-more="${fuelRngId || fuelPctId || fuelLId}">
+      tiles.push(`<div class="tile wide" data-more="${esc(fuelRngId || fuelPctId || fuelLId)}">
         <div class="lbl"><ha-icon icon="mdi:gas-station"></ha-icon>${T('fuel')}</div>
         <div class="temps"><div><div class="big">${this._fmt(fr)}<small>${T('km')}</small></div><div class="muted">${T('fuel_range')}</div></div>
         <div><div class="big">${fpct != null ? this._fmt(fpct) + '%' : this._fmt(fl, 1) + `<small>${T('litres')}</small>`}</div><div class="muted">${fpct != null && fl != null ? this._fmt(fl, 1) + ' ' + T('litres') : ''}</div></div></div>
@@ -595,17 +625,17 @@ class Geely3DCard extends HTMLElement {
     if (showChg) {
       const pw = this._n(I('charging_power')), ttf = this._n(I('time_to_full_charge'));
       const ttfS = ttf == null ? '—' : ttf >= 60 ? `${Math.floor(ttf / 60)}:${String(Math.round(ttf % 60)).padStart(2, '0')} ${T('h')}` : `${this._fmt(ttf)} ${T('min')}`;
-      tiles.push(`<div class="tile wide" data-more="${I('charging_power')}" style="border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent)">
+      tiles.push(`<div class="tile wide" data-more="${esc(I('charging_power'))}" style="border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent)">
         <div class="lbl" style="color:var(--zc-teal)"><ha-icon icon="mdi:ev-plug-type2"></ha-icon>${T(charging ? 'charging' : 'plugged')}</div>
         <div class="temps"><div><div class="big">${this._fmt(pw, 1)}<small>${T('kw')}</small></div><div class="muted">${T('power')}</div></div>
         <div><div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div></div></div></div>`);
     }
     const tin = this._n(I('interior_temperature')), tout = this._n(I('exterior_temperature'));
-    tiles.push(`<div class="tile" data-more="${clim || I('interior_temperature')}"><div class="lbl"><ha-icon icon="mdi:thermometer"></ha-icon>${T('temperature')}</div>
+    tiles.push(`<div class="tile" data-more="${esc(clim || I('interior_temperature'))}"><div class="lbl"><ha-icon icon="mdi:thermometer"></ha-icon>${T('temperature')}</div>
       <div class="temps"><div><div class="big">${this._fmt(tin, 1)}°</div><div class="muted">${T('cabin')}</div></div>
       <div><div class="big">${this._fmt(tout, 1)}°</div><div class="muted">${T('outside')}</div></div></div></div>`);
     const tcell = (k) => { const id = I('tire_pressure_' + k), b = this._tireBar(id); const low = b != null && b < this._cfg.low_bar;
-      return `<div class="tp ${low ? 'low' : ''}" data-more="${id}">${b == null ? '—' : b.toFixed(1)}<small>bar</small></div>`; };
+      return `<div class="tp ${low ? 'low' : ''}" data-more="${esc(id)}">${b == null ? '—' : b.toFixed(1)}<small>bar</small></div>`; };
     tiles.push(`<div class="tile"><div class="lbl"><ha-icon icon="mdi:tire"></ha-icon>${T('tires')}</div>
       <div class="tires">${tcell('fl')}<div class="car"></div>${tcell('fr')}${tcell('rl')}${tcell('rr')}</div></div>`);
     E.tiles.innerHTML = tiles.join('');
@@ -626,7 +656,7 @@ class Geely3DCard extends HTMLElement {
     ].join('');
 
     // stats
-    const stat = (k, label, unit, d = 0) => { const v = this._n(I(k)); return v == null ? '' : `<span data-more="${I(k)}" style="cursor:pointer">${label} <b>${this._fmt(v, d)}</b> ${unit}</span>`; };
+    const stat = (k, label, unit, d = 0) => { const v = this._n(I(k)); return v == null ? '' : `<span data-more="${esc(I(k))}" style="cursor:pointer">${label} <b>${this._fmt(v, d)}</b> ${unit}</span>`; };
     E.stats.innerHTML = [stat('total_mileage', T('odometer'), T('km')), stat('distance_to_service', T('to_service'), T('km')),
       stat('average_consumption', T('consumption'), T('kwh100'), 1), stat('last_trip', T('last_trip'), T('km'), 1)].join('');
 
@@ -635,9 +665,9 @@ class Geely3DCard extends HTMLElement {
     const seg = (key, icon, color) => {
       const id = this._id('select', key), s = this._s(id); if (!s) return;
       const opts = s.attributes.options || [];
-      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span><span class="seg" style="--c:${color}">${
+      rows.push(`<div class="row"><span class="k" data-more="${esc(id)}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span><span class="seg" style="--c:${color}">${
         opts.map((o) => { const lk = 'opt_' + String(o).toLowerCase(); const lbl = GEC_I18N.en[lk] ? T(lk) : o;
-          return `<button class="${s.state === o ? 'sel' : ''}" data-act="select" data-ent="${id}" data-opt="${esc(o)}">${esc(lbl)}</button>`; }).join('')}</span></div>`);
+          return `<button class="${s.state === o ? 'sel' : ''}" data-act="select" data-ent="${esc(id)}" data-opt="${esc(o)}">${esc(lbl)}</button>`; }).join('')}</span></div>`);
     };
     seg('seat_heat_driver', 'mdi:car-seat-heater', 'var(--zc-amber)');
     seg('seat_heat_passenger', 'mdi:car-seat-heater', 'var(--zc-amber)');
@@ -651,9 +681,9 @@ class Geely3DCard extends HTMLElement {
       const id = this._id('cover', key), s = this._s(id); if (!s) return;
       const open = s.state === 'open' || (s.attributes.current_position || 0) > 0;
       const stTxt = GEC_BAD.includes(s.state) ? T('unavailable') : T(open ? 'is_open' : 'is_closed');
-      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(label)} <span class="muted">· ${stTxt}</span></span><span style="display:flex;gap:6px">
-        <button class="btn ${open ? 'sel' : ''}" data-act="cover" data-dir="open" data-ent="${id}" data-key="${key}">${T('open')}</button>
-        <button class="btn ${!open ? 'sel' : ''}" data-act="cover" data-dir="close" data-ent="${id}" data-key="${key}">${T('close')}</button></span></div>`);
+      rows.push(`<div class="row"><span class="k" data-more="${esc(id)}"><ha-icon icon="${icon}"></ha-icon>${T(label)} <span class="muted">· ${stTxt}</span></span><span style="display:flex;gap:6px">
+        <button class="btn ${open ? 'sel' : ''}" data-act="cover" data-dir="open" data-ent="${esc(id)}" data-key="${esc(key)}">${T('open')}</button>
+        <button class="btn ${!open ? 'sel' : ''}" data-act="cover" data-dir="close" data-ent="${esc(id)}" data-key="${esc(key)}">${T('close')}</button></span></div>`);
     };
     cov('all_windows', 'windows', 'mdi:car-door');
     cov('sunroof', 'sunroof', 'mdi:car-select');
@@ -661,14 +691,14 @@ class Geely3DCard extends HTMLElement {
     const sw = (key, icon) => {
       const id = this._id('switch', key), s = this._s(id); if (!s) return;
       const on = s.state === 'on';
-      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span>
-        <span class="seg" style="--c:var(--zc-blue)"><button class="${on ? 'sel' : ''}" ${on ? '' : `data-act="switch" data-ent="${id}"`}>${T('on')}</button><button class="${!on ? 'sel' : ''}" ${!on ? '' : `data-act="switch" data-ent="${id}"`}>${T('off')}</button></span></div>`);
+      rows.push(`<div class="row"><span class="k" data-more="${esc(id)}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span>
+        <span class="seg" style="--c:var(--zc-blue)"><button class="${on ? 'sel' : ''}" ${on ? '' : `data-act="switch" data-ent="${esc(id)}"`}>${T('on')}</button><button class="${!on ? 'sel' : ''}" ${!on ? '' : `data-act="switch" data-ent="${esc(id)}"`}>${T('off')}</button></span></div>`);
     };
     sw('defrost', 'mdi:car-defrost-front');
     const pressRow = (key, label, icon) => {
       const id = this._id('button', key); if (!this._s(id)) return;
-      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(label)}</span>
-        <button class="btn" data-act="press" data-ent="${id}" data-key="${key}">${T('unlock_btn')}</button></div>`);
+      rows.push(`<div class="row"><span class="k" data-more="${esc(id)}"><ha-icon icon="${icon}"></ha-icon>${T(label)}</span>
+        <button class="btn" data-act="press" data-ent="${esc(id)}" data-key="${esc(key)}">${T('unlock_btn')}</button></div>`);
     };
     pressRow('unlock_trunk', 'trunk_btn', 'mdi:car-back');
     pressRow('unlock_frunk', 'frunk', 'mdi:car-arrow-right');

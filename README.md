@@ -67,15 +67,18 @@ Notes on partial support:
 
 [![Open in the Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=1immortal&repository=geely-3d-card&category=plugin)
 
-1. **Settings → Marketplace → Add from link**, enter `1immortal/geely-3d-card` (type **Dashboard**, if asked).
-2. Open **Geely 3D Card**, install it, then reload the browser.
-3. The resource `/local/community/geely-3d-card/geely-3d-card.js` is registered automatically.
+Once the card is in the default catalog:
+
+1. **Settings → Marketplace**, search for **Geely 3D Card**, open it, install it, then reload the browser.
+2. The resource `/local/community/geely-3d-card/geely-3d-card.js` is registered automatically.
+
+If it does not appear in search yet, add it by link: **Settings → Marketplace → Add from link**, enter `1immortal/geely-3d-card` (type **Dashboard**, if asked), then install as above.
 
 ### HACS (Home Assistant 2026.10 and older)
 
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/1immortal/geely-3d-card`, category **Dashboard**.
-2. Install **Geely 3D Card**, then reload the browser.
-3. HACS registers the resource `/hacsfiles/geely-3d-card/geely-3d-card.js` automatically.
+Once the card is in the default store, search for **Geely 3D Card** in HACS, install it, then reload the browser. HACS registers the resource `/hacsfiles/geely-3d-card/geely-3d-card.js` automatically.
+
+If search does not find it, add it as a custom repository first: HACS → ⋮ → **Custom repositories** → add `https://github.com/1immortal/geely-3d-card`, category **Dashboard**, then install as above.
 
 ### Manual
 
