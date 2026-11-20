@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.5.0';
+const GEC_VERSION = '1.5.1';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -127,6 +127,10 @@ class Geely3DCard extends HTMLElement {
       }
       return id;
     };
+    const tireUnit = String(c.tire_unit == null || String(c.tire_unit).trim() === '' ? 'bar' : c.tire_unit).trim().toLowerCase();
+    if (!['bar', 'psi', 'kpa'].includes(tireUnit)) {
+      throw new Error('geely-3d-card: "tire_unit" must be bar, psi or kpa');
+    }
     this._raw = c;
     this._cfg = {
       title: c.title || null,
@@ -136,7 +140,10 @@ class Geely3DCard extends HTMLElement {
       language: (c.language || 'auto').toLowerCase(),
       service_days: c.service_warning_days ?? 14,
       service_km: c.service_warning_km ?? 1000,
-      low_bar: c.low_tire_bar ?? 2.3,
+      low_bar: c.low_tire_bar != null && String(c.low_tire_bar).trim() !== '' ? Number(c.low_tire_bar)
+        : c.low_tire_psi != null && String(c.low_tire_psi).trim() !== '' ? Number(c.low_tire_psi) * 0.0689476
+        : 2.3,
+      tire_unit: tireUnit,
       charge_start: chargeOpt('charge_start_entity'),
       charge_stop: chargeOpt('charge_stop_entity'),
       charger_switch: chargeOpt('charger_switch_entity', ['switch']),
@@ -252,6 +259,13 @@ class Geely3DCard extends HTMLElement {
     if (u === 'kpa') return v / 100;
     return v * 0.0689476;
   }
+  _tireFromBar(bar) {
+    const u = this._cfg.tire_unit;
+    if (u === 'psi') return bar / 0.0689476;
+    if (u === 'kpa') return bar * 100;
+    return bar;
+  }
+  _tireUnitLabel() { return this._cfg.tire_unit === 'kpa' ? 'kPa' : this._cfg.tire_unit; }
 
   set hass(hass) {
     this._hass = hass;
@@ -712,8 +726,11 @@ class Geely3DCard extends HTMLElement {
     tiles.push(`<div class="tile" data-more="${esc(clim || I('interior_temperature'))}"><div class="lbl"><ha-icon icon="mdi:thermometer"></ha-icon>${T('temperature')}</div>
       <div class="temps"><div><div class="big">${this._fmt(tin, 1)}°</div><div class="muted">${T('cabin')}</div></div>
       <div><div class="big">${this._fmt(tout, 1)}°</div><div class="muted">${T('outside')}</div></div></div></div>`);
-    const tcell = (k) => { const id = I('tire_pressure_' + k), b = this._tireBar(id); const low = b != null && b < this._cfg.low_bar;
-      return `<div class="tp ${low ? 'low' : ''}" data-more="${esc(id)}">${b == null ? '—' : b.toFixed(1)}<small>bar</small></div>`; };
+    const tcell = (k) => {
+      const id = I('tire_pressure_' + k), b = this._tireBar(id);
+      const low = b != null && b < this._cfg.low_bar;
+      const shown = b == null ? '—' : this._fmt(this._tireFromBar(b), this._cfg.tire_unit === 'bar' ? 1 : 0);
+      return `<div class="tp ${low ? 'low' : ''}" data-more="${esc(id)}">${shown}<small>${esc(this._tireUnitLabel())}</small></div>`; };
     tiles.push(`<div class="tile"><div class="lbl"><ha-icon icon="mdi:tire"></ha-icon>${T('tires')}</div>
       <div class="tires">${tcell('fl')}<div class="car"></div>${tcell('fr')}${tcell('rl')}${tcell('rr')}</div></div>`);
     E.tiles.innerHTML = tiles.join('');

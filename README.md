@@ -25,7 +25,7 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
 - Lock state with lock / unlock button (unlock asks for confirmation)
 - Red warning chips for open doors, trunk, hood, windows, sunroof and fuel flap
 - Service warning chip (days or km to service)
-- Tire pressures in bar on a small top-view diagram, low pressure highlighted (psi / kPa / bar sensors are converted automatically)
+- Tire pressures in **bar** by default (or `psi` / `kPa` via `tire_unit`) on a small top-view diagram, low pressure highlighted (sensors in psi / kPa / bar are converted automatically)
 - Cabin and outside temperature
 - Quick actions: pre-conditioning on/off, start/stop charging (with confirmation), find car, refresh data
 - Expandable details: seat heating & ventilation (front and rear, where the car has them), windows, sunroof, sunshade, defrost, unlock trunk, unlock **frunk** (EX2 / E2)
@@ -128,7 +128,9 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `image_background` | string | model default | Panel color behind non-transparent frames, e.g. `'#f5f3f1'`; `null` for none |
 | `service_warning_days` | number | `14` | Show the service chip when days to service ≤ this |
 | `service_warning_km` | number | `1000` | …or when distance to service ≤ this (km) |
-| `low_tire_bar` | number | `2.3` | Tire pressure (bar) below which a tire is highlighted |
+| `tire_unit` | string | `bar` | Display unit for tire pressures: `bar`, `psi` or `kpa`. Sensor values in any of those units are converted automatically |
+| `low_tire_bar` | number | `2.3` | Tire pressure (bar) below which a tire is highlighted. Compared in bar internally, even when the display unit is psi or kPa |
+| `low_tire_psi` | number | – | Optional low-pressure threshold in psi. Used only if `low_tire_bar` is not set |
 | `charge_start_entity` | string | – | Optional. Entity that starts the wall charger (`button`, `switch`, `script` or `input_button`) |
 | `charge_stop_entity` | string | – | Optional. Entity that stops the wall charger (same domains) |
 | `charger_switch_entity` | string | – | Optional. A single `switch` used for both start (`turn_on`) and stop (`turn_off`). Used for a side if the matching start/stop entity is not set |
@@ -218,6 +220,9 @@ language: he
 ```
 
 ## Changelog
+
+### 1.5.1
+- Optional `tire_unit: bar` (default) / `psi` / `kpa` for the tire-pressure display. Sensors in psi, bar or kPa are converted automatically. `low_tire_bar` is still compared in bar; `low_tire_psi` can be used instead if you prefer to set the threshold in psi.
 
 ### 1.5.0
 - Optional charger control: configure `charge_start_entity` and `charge_stop_entity` (a `button`, `switch`, `script` or `input_button`), or a single `charger_switch_entity`. Start/Stop buttons appear in the charging bubble, with confirmation. Works with any charger integration in Home Assistant (for example BENY, Wallbox, OCPP or Easee). The car's own charging action is unchanged.
