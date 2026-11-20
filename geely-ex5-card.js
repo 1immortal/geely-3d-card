@@ -4,8 +4,22 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-ex5-card - MIT License
  */
-const GEC_VERSION = '1.1.0';
+const GEC_VERSION = '1.2.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
+
+/* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
+ * clockwise seen from above, like geely.com's EX5 set; -1 = the opposite, like the Geely Australia sets).
+ * `studio` = background colour of frame sets that are not transparent (the stage is drawn as a matching panel).
+ * Entities are always discovered at runtime; a block whose entities do not exist is hidden. */
+const GEC_MODELS = {
+  ex5: { name: 'Geely EX5', drive: 'bev', frames: 24, start: 5, direction: 1, color: 'silver', ext: 'webp', studio: null,
+    match: /(?:^|[^a-z0-9])ex\s?5(?:[^a-z0-9]|$)|e245/i },
+  ex2: { name: 'Geely EX2', drive: 'bev', frames: 24, start: 21, direction: -1, color: 'star-silver', ext: 'webp', studio: '#f5f3f1',
+    match: /(?:^|[^a-z0-9])(?:ex\s?2|e2)(?:\s?max\+?)?(?:[^a-z0-9]|$)/i },
+  starray_emi: { name: 'Geely Starray EM-i', drive: 'phev', frames: 24, start: 21, direction: -1, color: 'cloudveil-silver', ext: 'webp', studio: '#f9f3f0',
+    match: /starray|p145/i },
+  generic: { name: 'Geely', drive: 'auto', frames: 1, start: 1, direction: 1, color: null, ext: 'webp', studio: null, match: null },
+};
 
 const GEC_I18N = {
   en: {
@@ -34,6 +48,11 @@ const GEC_I18N = {
     t_clim_off: 'Pre-conditioning off', t_start: 'Start charging sent', t_stop: 'Stop charging sent',
     t_find: 'The car will flash and beep', t_refresh: 'Refreshing data…', t_updated: 'Updated', t_err: 'Error: {m}', t_failed: 'command failed',
     no_prefix: 'geely-ex5-card: "entity_prefix" is required (e.g. my_geely_ex5_1234)',
+    fuel: 'Fuel', fuel_range: 'Fuel range', combined: 'Total range: {n} km', ev_range: 'Electric range', litres: 'L',
+    fuel_flap: 'Fuel flap open', frunk: 'Front trunk', trunk_btn: 'Trunk', unlock_btn: 'Unlock',
+    c_unlock_frunk: 'Open the front trunk?', c_unlock_trunk: 'Unlock the trunk?',
+    seat_heat_rear_left: 'Rear left seat heating', seat_heat_rear_right: 'Rear right seat heating',
+    seat_vent_rear_left: 'Rear left seat ventilation', seat_vent_rear_right: 'Rear right seat ventilation',
   },
   he: {
     loading: 'טוען…', drag: 'גררו לסיבוב', details: 'פרטים ובקרות', yes: 'אישור', no: 'ביטול',
@@ -61,6 +80,11 @@ const GEC_I18N = {
     t_clim_off: 'מיזוג מראש כובה', t_start: 'התחלת טעינה נשלחה', t_stop: 'עצירת טעינה נשלחה',
     t_find: 'הרכב יצפור ויהבהב', t_refresh: 'מרענן נתונים…', t_updated: 'עודכן', t_err: 'שגיאה: {m}', t_failed: 'הפקודה נכשלה',
     no_prefix: 'geely-ex5-card: חובה להגדיר "entity_prefix"',
+    fuel: 'דלק', fuel_range: 'טווח דלק', combined: 'טווח כולל: {n} ק״מ', ev_range: 'טווח חשמלי', litres: 'ל׳',
+    fuel_flap: 'מכסה הדלק פתוח', frunk: 'תא מטען קדמי', trunk_btn: 'תא מטען', unlock_btn: 'פתח',
+    c_unlock_frunk: 'לפתוח את תא המטען הקדמי?', c_unlock_trunk: 'לפתוח את נעילת תא המטען?',
+    seat_heat_rear_left: 'חימום מושב אחורי שמאל', seat_heat_rear_right: 'חימום מושב אחורי ימין',
+    seat_vent_rear_left: 'אוורור מושב אחורי שמאל', seat_vent_rear_right: 'אוורור מושב אחורי ימין',
   },
 };
 
@@ -77,22 +101,19 @@ class GeelyEx5Card extends HTMLElement {
   setConfig(config) {
     const c = config || {};
     if (!c.entity_prefix) throw new Error(GEC_I18N.en.no_prefix);
-    const color = c.color || 'silver';
+    this._raw = c;
     this._cfg = {
-      title: c.title || 'Geely EX5',
+      title: c.title || null,
+      model: String(c.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_'),
       prefix: String(c.entity_prefix).replace(/^[a-z_]+\./, ''),
       climate: c.climate_entity || null,
       language: (c.language || 'auto').toLowerCase(),
-      base: (c.image_base || `/local/geely-ex5/${color}/`).replace(/\/?$/, '/'),
-      ext: c.image_ext || 'webp',
-      frames: Number(c.frames) || 24,
-      start: Number(c.start_frame) || 5,
       service_days: c.service_warning_days ?? 14,
       service_km: c.service_warning_km ?? 1000,
       low_bar: c.low_tire_bar ?? 2.3,
     };
-    this._pos = this._cfg.start - 1;
     this._sig = null;
+    this._prof = null;
     this._cur = null;
     if (this._built) { this._built = false; this.shadowRoot.innerHTML = ''; }
     if (this._hass) this.hass = this._hass;
@@ -134,6 +155,37 @@ class GeelyEx5Card extends HTMLElement {
     if (a < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
     return rtf.format(Math.round(sec / 86400), 'day');
   }
+  _detectModel() {
+    const want = this._cfg.model;
+    if (GEC_MODELS[want]) return want;
+    const h = this._hass, texts = [this._cfg.prefix];
+    const ent = h.entities && (h.entities[this._id('lock', 'doors')] || h.entities[this._id('sensor', 'battery')]);
+    const dev = ent && ent.device_id && h.devices && h.devices[ent.device_id];
+    if (dev) texts.unshift(dev.model || '', dev.name_by_user || '', dev.name || '');
+    const lk = this._s(this._id('lock', 'doors'));
+    if (lk) texts.push(lk.attributes.friendly_name || '');
+    for (const t of texts) for (const [k, m] of Object.entries(GEC_MODELS)) if (m.match && m.match.test(t)) return k;
+    return 'generic';
+  }
+  _profile() {
+    if (this._prof) return this._prof;
+    const c = this._raw, key = this._detectModel(), m = GEC_MODELS[key];
+    const color = c.color || m.color;
+    const single = c.car_image || null;
+    let frames = Number(c.frames) || (single ? 1 : m.frames);
+    let base = c.image_base || (color ? `/local/geely-ex5/${key}/${color}/` : null);
+    if (base) base = base.replace(/\/?$/, '/');
+    if (!single && !base) frames = 0;
+    this._prof = {
+      key, name: m.name, drive: m.drive, frames, base, single,
+      ext: c.image_ext || m.ext,
+      start: Number(c.start_frame) || m.start,
+      direction: Number(c.rotate_direction) || m.direction,
+      studio: c.image_background !== undefined ? c.image_background : m.studio,
+    };
+    return this._prof;
+  }
+  _first(domain, keys) { for (const k of keys) { const id = this._id(domain, k); if (this._s(id)) return id; } return null; }
   _climateId() {
     if (this._cfg.climate) return this._cfg.climate;
     if (this._climAuto !== undefined) return this._climAuto;
@@ -179,9 +231,13 @@ class GeelyEx5Card extends HTMLElement {
   _build() {
     this._built = true;
     const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
-    const N = this._cfg.frames;
+    const P = this._profile();
+    const N = P.frames;
+    this._pos = Math.min(Math.max(P.start, 1), Math.max(N, 1)) - 1;
     let imgs = '';
-    for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._cfg.base}${i}.${this._cfg.ext}" data-f="${i - 1}">`;
+    if (P.single) imgs = `<img draggable="false" alt="" src="${this._esc(P.single)}" data-f="0">`;
+    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${P.base}${i}.${P.ext}" data-f="${i - 1}">`;
+    if (!N) imgs = '<div class="ph"><ha-icon icon="mdi:car-side"></ha-icon></div>';
     root.innerHTML = `
 <style>
   :host { display:block; }
@@ -221,6 +277,12 @@ class GeelyEx5Card extends HTMLElement {
   .frames { position:absolute; inset:0; }
   .frames img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; pointer-events:none; -webkit-user-drag:none; }
   .frames img.on { opacity:1; }
+  .stage.studio { background:var(--zc-studio); border-radius:14px; overflow:hidden; }
+  .stage.studio::before, .stage.studio .floor { display:none; }
+  .stage.studio .hint { color:#5b6270; inset-inline-start:10px; bottom:8px; }
+  .stage.static { cursor:pointer; touch-action:auto; }
+  .ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--zc-mut); opacity:.5; }
+  .ph ha-icon { --mdc-icon-size:min(40cqi, 180px); }
   .hint { position:absolute; bottom:4px; inset-inline-start:0; font-size:11.5px; color:var(--zc-mut); display:flex; align-items:center; gap:4px;
     transition:opacity .6s; pointer-events:none; }
   .hint ha-icon { --mdc-icon-size:16px; }
@@ -312,12 +374,19 @@ class GeelyEx5Card extends HTMLElement {
     this._applyStatic();
     this._imgs = [...root.querySelectorAll('.frames img')];
     let loaded = 0;
+    if (!this._imgs.length) this._el.loading.remove();
     this._imgs.forEach((im) => {
       const done = () => { if (++loaded >= this._imgs.length) this._el.loading.remove(); };
       if (im.complete) done(); else { im.addEventListener('load', done, { once: true }); im.addEventListener('error', done, { once: true }); }
     });
-    this._showFrame();
-    this._setupDrag();
+    const st = this._el.stage;
+    if (P.studio) { st.classList.add('studio'); st.style.setProperty('--zc-studio', P.studio); }
+    if (N > 1) { this._showFrame(); this._setupDrag(); }
+    else {
+      st.classList.add('static'); this._el.hint.remove();
+      if (N === 1) { this._imgs[0] && this._imgs[0].classList.add('on'); this._cur = 0; }
+      st.addEventListener('click', () => this._more(this._id('device_tracker', 'location')));
+    }
     this._el.more.addEventListener('click', () => {
       this._detOpen = !this._detOpen;
       this._el.more.classList.toggle('open', this._detOpen); this._el.det.classList.toggle('open', this._detOpen);
@@ -342,7 +411,7 @@ class GeelyEx5Card extends HTMLElement {
 
   /* ---------- rotation ---------- */
   _showFrame() {
-    const N = this._cfg.frames;
+    const N = this._prof.frames;
     const f = ((Math.round(this._pos) % N) + N) % N;
     if (f === this._cur) return;
     if (this._cur != null && this._imgs[this._cur]) this._imgs[this._cur].classList.remove('on');
@@ -363,9 +432,9 @@ class GeelyEx5Card extends HTMLElement {
       const dx = e.clientX - x0;
       if (!moved && Math.abs(dx) > 6) { moved = true; st.classList.add('drag'); try { st.setPointerCapture(id); } catch (_) {} this._el.hint.classList.add('gone'); }
       if (!moved) return;
-      this._pos = p0 - dx / step();
+      this._pos = p0 - this._prof.direction * dx / step();
       const dt = Math.max(1, e.timeStamp - lastT);
-      vel = 0.7 * vel + 0.3 * (-(e.clientX - lastX) / step() / dt);
+      vel = 0.7 * vel + 0.3 * (-this._prof.direction * (e.clientX - lastX) / step() / dt);
       lastX = e.clientX; lastT = e.timeStamp;
       this._showFrame();
     });
@@ -434,6 +503,7 @@ class GeelyEx5Card extends HTMLElement {
       }
       case 'find': this._svc('button', 'press', { entity_id: this._id('button', 'find_car') }, 't_find'); break;
       case 'refresh': this._svc('button', 'press', { entity_id: this._id('button', 'refresh_data') }, 't_refresh'); break;
+      case 'press': this._confirm(this._t('c_' + d.key), () => this._svc('button', 'press', { entity_id: d.ent })); break;
       case 'select': this._svc('select', 'select_option', { entity_id: d.ent, option: d.opt }, 't_updated'); break;
       case 'switch': this._svc('switch', this._on(d.ent) ? 'turn_off' : 'turn_on', { entity_id: d.ent }); break;
       case 'cover': {
@@ -450,7 +520,7 @@ class GeelyEx5Card extends HTMLElement {
     const esc = (t) => this._esc(t);
     const clim = this._climateId();
     // header
-    E.title.textContent = this._cfg.title;
+    E.title.textContent = this._cfg.title || this._profile().name;
     const trk = this._s(this._id('device_tracker', 'location'));
     const loc = !trk ? null : trk.state === 'home' ? T('home') : trk.state === 'not_home' ? T('away') : GEC_BAD.includes(trk.state) ? null : trk.state;
     const connected = this._on(B('connected'));
@@ -471,6 +541,8 @@ class GeelyEx5Card extends HTMLElement {
     else if (lockS) chips.push(`<span class="chip bad" data-more="${lockId}"><ha-icon icon="mdi:lock-open-variant"></ha-icon>${lockS === 'unlocked' ? T('unlocked') : esc(lockS)}</span>`);
     const opens = [['door_driver', 'mdi:car-door'], ['door_passenger', 'mdi:car-door'], ['door_rear_left', 'mdi:car-door'],
       ['door_rear_right', 'mdi:car-door'], ['trunk', 'mdi:car-back'], ['hood', 'mdi:car-lifted-pickup']];
+    const flap = this._first('binary_sensor', ['fuel_flap', 'tank_flap']);
+    if (flap && this._on(flap)) chips.push(`<span class="chip bad" data-more="${flap}"><ha-icon icon="mdi:gas-station"></ha-icon>${T('fuel_flap')}</span>`);
     for (const [k, ic] of opens) if (this._on(B(k))) chips.push(`<span class="chip bad" data-more="${B(k)}"><ha-icon icon="${ic}"></ha-icon>${T(k)}</span>`);
     for (const [k, key] of [['all_windows', 'windows_open'], ['sunroof', 'sunroof_open']]) {
       const s = this._s(this._id('cover', k));
@@ -495,14 +567,29 @@ class GeelyEx5Card extends HTMLElement {
     const showChg = plugged || charging || (conn && conn !== 'disconnected');
     const C = 2 * Math.PI * 31, frac = bat == null ? 0 : Math.max(0, Math.min(100, bat)) / 100;
     const tiles = [];
+    const fuelPctId = this._first('sensor', ['fuel_level_percent', 'fuel_level_pct']);
+    const fuelLId = this._first('sensor', ['fuel_level']);
+    const fuelRngId = this._first('sensor', ['fuel_range']);
+    const combId = this._first('sensor', ['combined_range']);
+    const hasFuel = !!(fuelPctId || fuelLId || fuelRngId) && this._profile().drive !== 'bev';
+    const comb = combId ? this._n(combId) : null;
     tiles.push(`<div class="tile wide" data-more="${I('battery')}"><div class="bat">
       <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="31" fill="none" stroke="var(--zc-pan2)" stroke-width="7"/>
         <circle cx="37" cy="37" r="31" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}"/></svg>
         <div class="pct">${bat == null ? '—' : this._fmt(bat) + '%'}</div></div>
       <div style="flex:1;min-width:0"><div class="lbl"><ha-icon icon="${charging ? 'mdi:battery-charging' : 'mdi:battery'}"></ha-icon>${T('battery_range')}</div>
         <div class="big">${this._fmt(rng)}<small>${T('km')}</small></div>
-        <div class="muted">${full != null ? T('full_range', { n: this._fmt(full) }) : ''}</div>
+        <div class="muted">${hasFuel ? (comb != null ? T('combined', { n: this._fmt(comb) }) : T('ev_range')) : full != null ? T('full_range', { n: this._fmt(full) }) : ''}</div>
         <div class="bar"><i style="width:${(frac * 100).toFixed(0)}%;background:${col}"></i></div></div></div></div>`);
+    if (hasFuel) {
+      const fpct = fuelPctId ? this._n(fuelPctId) : null, fl = fuelLId ? this._n(fuelLId) : null, fr = fuelRngId ? this._n(fuelRngId) : null;
+      const fcol = fpct == null ? 'var(--zc-amber)' : fpct > 25 ? 'var(--zc-amber)' : 'var(--zc-red)';
+      tiles.push(`<div class="tile wide" data-more="${fuelRngId || fuelPctId || fuelLId}">
+        <div class="lbl"><ha-icon icon="mdi:gas-station"></ha-icon>${T('fuel')}</div>
+        <div class="temps"><div><div class="big">${this._fmt(fr)}<small>${T('km')}</small></div><div class="muted">${T('fuel_range')}</div></div>
+        <div><div class="big">${fpct != null ? this._fmt(fpct) + '%' : this._fmt(fl, 1) + `<small>${T('litres')}</small>`}</div><div class="muted">${fpct != null && fl != null ? this._fmt(fl, 1) + ' ' + T('litres') : ''}</div></div></div>
+        ${fpct != null ? `<div class="bar"><i style="width:${Math.max(0, Math.min(100, fpct)).toFixed(0)}%;background:${fcol}"></i></div>` : ''}</div>`);
+    }
     if (showChg) {
       const pw = this._n(I('charging_power')), ttf = this._n(I('time_to_full_charge'));
       const ttfS = ttf == null ? '—' : ttf >= 60 ? `${Math.floor(ttf / 60)}:${String(Math.round(ttf % 60)).padStart(2, '0')} ${T('h')}` : `${this._fmt(ttf)} ${T('min')}`;
@@ -554,6 +641,10 @@ class GeelyEx5Card extends HTMLElement {
     seg('seat_heat_passenger', 'mdi:car-seat-heater', 'var(--zc-amber)');
     seg('seat_vent_driver', 'mdi:car-seat-cooler', 'var(--zc-blue)');
     seg('seat_vent_passenger', 'mdi:car-seat-cooler', 'var(--zc-blue)');
+    seg('seat_heat_rear_left', 'mdi:car-seat-heater', 'var(--zc-amber)');
+    seg('seat_heat_rear_right', 'mdi:car-seat-heater', 'var(--zc-amber)');
+    seg('seat_vent_rear_left', 'mdi:car-seat-cooler', 'var(--zc-blue)');
+    seg('seat_vent_rear_right', 'mdi:car-seat-cooler', 'var(--zc-blue)');
     const cov = (key, label, icon) => {
       const id = this._id('cover', key), s = this._s(id); if (!s) return;
       const open = s.state === 'open' || (s.attributes.current_position || 0) > 0;
@@ -572,6 +663,13 @@ class GeelyEx5Card extends HTMLElement {
         <span class="seg" style="--c:var(--zc-blue)"><button class="${on ? 'sel' : ''}" ${on ? '' : `data-act="switch" data-ent="${id}"`}>${T('on')}</button><button class="${!on ? 'sel' : ''}" ${!on ? '' : `data-act="switch" data-ent="${id}"`}>${T('off')}</button></span></div>`);
     };
     sw('defrost', 'mdi:car-defrost-front');
+    const pressRow = (key, label, icon) => {
+      const id = this._id('button', key); if (!this._s(id)) return;
+      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(label)}</span>
+        <button class="btn" data-act="press" data-ent="${id}" data-key="${key}">${T('unlock_btn')}</button></div>`);
+    };
+    pressRow('unlock_trunk', 'trunk_btn', 'mdi:car-back');
+    pressRow('unlock_frunk', 'frunk', 'mdi:car-arrow-right');
     E.det.innerHTML = rows.length ? rows.join('') : `<div class="muted">${T('no_controls')}</div>`;
   }
 }

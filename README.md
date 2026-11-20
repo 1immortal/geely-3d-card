@@ -1,32 +1,63 @@
 # Geely EX5 Card
 
-A polished Lovelace card for the **Geely EX5** in Home Assistant, with a **drag-to-rotate 360° view** of the car, battery & range, charging, tire pressures, climate, lock and quick controls. Full **English** and **Hebrew (RTL)** UI.
+A polished Lovelace card for **Geely** cars in Home Assistant – built for the **EX5**, and also supporting the **EX2 / E2 / EX2 Max** and the **Starray EM-i (PHEV)** – with a **drag-to-rotate 360° view** of the car, battery & range, fuel (PHEV), charging, tire pressures, climate, lock and quick controls. Full **English** and **Hebrew (RTL)** UI.
+
+It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKon/geely-connect)** integration by **[@YossiKon](https://github.com/YossiKon)** – all the car data and commands come from that integration (see [Credits](#credits)).
+
+> **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely, downloaded by you from [geely.com](https://www.geely.com/) / [geely.com.au](https://www.geely.com.au/), and are not part of this repository.
 
 ![Geely EX5 Card – English, desktop](docs/screenshot-en-desktop.png)
+
+## Credits
+
+- **Integration:** [Geely Connect](https://github.com/YossiKon/geely-connect) (`geely_connect`) by [@YossiKon](https://github.com/YossiKon) – the unofficial Home Assistant integration that talks to Geely's cloud and creates every entity this card reads and controls. Issues with data or commands belong in [its issue tracker](https://github.com/YossiKon/geely-connect/issues). Per its source, its protocol mappings build in part on [nitaybz/geely-global-ha](https://github.com/nitaybz/geely-global-ha).
+- **Car images:** the 360° frames come from Geely's own websites – [geely.com](https://www.geely.com/en/models/ex5) (EX5) and [geely.com.au](https://www.geely.com.au/) (EX2, Starray EM-i). They are © Geely and are fetched locally by `scripts/fetch-images.sh`; they are not redistributed here.
+- **Icons:** [Material Design Icons](https://pictogrammers.com/library/mdi/) via Home Assistant's `ha-icon`.
 
 ## Features
 
 - 360° car view: drag (mouse or touch) through 24 frames with momentum; vertical page scrolling still works on phones
-- Battery ring (color by level), range and range at full charge
+- Per-model profiles with automatic model detection (from the device in the device registry)
+- Battery ring (color by level), electric range and range at full charge
+- **PHEV:** fuel tile (fuel %, litres, fuel range) and total combined range; fuel-flap-open warning
 - Charging panel (power, time to full) – shown only while plugged in / charging
 - Lock state with lock / unlock button (unlock asks for confirmation)
-- Red warning chips for open doors, trunk, hood, windows and sunroof
+- Red warning chips for open doors, trunk, hood, windows, sunroof and fuel flap
 - Service warning chip (days or km to service)
 - Tire pressures in bar on a small top-view diagram, low pressure highlighted (psi / kPa / bar sensors are converted automatically)
 - Cabin and outside temperature
 - Quick actions: pre-conditioning on/off, start/stop charging (with confirmation), find car, refresh data
-- Expandable details: seat heating & ventilation (driver/passenger), windows, sunroof, sunshade, defrost
+- Expandable details: seat heating & ventilation (front and rear, where the car has them), windows, sunroof, sunshade, defrost, unlock trunk, unlock **frunk** (EX2 / E2)
+- Every block hides itself when the car does not have the entities – so trims without a sunroof or ventilated seats, and unknown models, just work
 - Tap any value to open the entity's more-info dialog
-- "Last updated" relative time
 - English (LTR) and Hebrew (RTL) – automatic from your HA language, or forced
 - Light and dark theme, responsive (one column on phones, two columns on wide sections)
 - Vanilla web component: no build step, no external dependencies
 
+## Supported models
+
+The integration is owner-tested on the EX5, the EX2 (sold as the E2 in some markets, plus the EX2 Max) and the Starray PHEV (Starray EM-i), and is capability-driven, so other Geely models on the Geely Global / International app should work too ([integration README](https://github.com/YossiKon/geely-connect#readme)). The card mirrors that:
+
+| Model (`model:`) | Drive | 360° view | Image source | Colors (`color:`) |
+|---|---|---|---|---|
+| Geely EX5 (`ex5`) | BEV | ✅ 24 frames, transparent | geely.com | `silver` (light gray), `grey`, `green`, `black`, `white` |
+| Geely EX2 / E2 / EX2 Max (`ex2`) | BEV | ✅ 24 frames, studio background | geely.com.au configurator | `moon-white`, `nebula-beige`, `star-silver`, `aurora-green`, `nova-pink`, `comet-grey` |
+| Geely Starray EM-i (`starray_emi`) | PHEV | ✅ 24 frames, studio background | geely.com.au configurator | `alpine-white`, `polar-black`, `jungle-green`, `glacier-blue`, `volcanic-grey`, `cloudveil-silver` |
+| Any other Geely (`generic`) | auto (fuel tile appears if fuel entities exist) | ➖ single image via `car_image`, or your own frames via `image_base` + `frames`; otherwise a car icon | – | – |
+
+Notes on partial support:
+
+- **EX2 and Starray EM-i** frames come from Geely Australia's configurator and are opaque JPGs on a light studio background (no transparent set is published). The card draws them on a matching rounded panel. `--remove-background` in the fetch script is an experimental cut-out.
+- **EX2 Max / E2** use the EX2 images – no separate 360° sets are published for them.
+- The **Starray** on geely.com's global site is a different, petrol-only car, so its 360° set is not used for the Starray EM-i.
+- Cars on the integration's experimental **new Geely EM (Zeekr) platform** get fewer entities. The card simply hides what is missing.
+- The EX5 profile has been run against a real car. The EX2 and Starray EM-i profiles have only been checked with simulated data built from the integration's entity names.
+
 ## Requirements
 
 - Home Assistant 2024.x or newer
-- The **Geely Connect** custom integration (domain `geely_connect`) with your EX5 added. The card only reads/controls the entities that integration creates.
-- The car images (see [Car images](#car-images)) – they are **not** included in this repository.
+- The **[Geely Connect](https://github.com/YossiKon/geely-connect)** custom integration (domain `geely_connect`) with your car added
+- The car images (see [Car images](#car-images)) – they are **not** included in this repository
 
 ## Installation
 
@@ -44,17 +75,19 @@ A polished Lovelace card for the **Geely EX5** in Home Assistant, with a **drag-
 
 ## Car images
 
-The 24 frames come from geely.com's public 360° viewer and are copyrighted by Geely, so they are not distributed here. Use the included script to download them for your own use, crop the empty top area and convert them to 900 px transparent WebP (about 1 MB for all 24):
+The frames are © Geely, so they are not distributed here. The included script downloads them for your own use, crops them and converts them to 900 px WebP (about 0.4–1 MB per color):
 
 ```bash
-# colors: silver (light gray), grey, green, black, white
-scripts/fetch-images.sh silver            # -> ./images/silver/1.webp … 24.webp
-# or: python3 scripts/fetch_images.py silver ./images/silver   (needs Pillow)
+scripts/fetch-images.sh --list                                   # models and their colors
+scripts/fetch-images.sh --model ex5 --color silver               # -> ./images/ex5/silver/1.webp … 24.webp
+scripts/fetch-images.sh --model ex2 --color star-silver          # --variant N picks another trim's set
+scripts/fetch-images.sh --model starray_emi --color glacier-blue # --remove-background (experimental)
+# or directly: python3 scripts/fetch_images.py … (needs Pillow)
 ```
 
-Copy the folder to Home Assistant as `/config/www/geely-ex5/<color>/` (for example with the File editor / Samba / SSH add-on), so the files are served at `/local/geely-ex5/<color>/1.webp`. Then set `color: <color>` in the card config, or point `image_base` anywhere else you stored them.
+Copy the folder to Home Assistant as **`/config/www/geely-ex5/<model>/<color>/`** (File editor, Samba or SSH add-on), so the files are served at `/local/geely-ex5/<model>/<color>/1.webp`. That is the card's default location for the detected `model` and `color`. If you store them anywhere else, set **`image_base`**.
 
-Frame 1 is the front, frame 7 the left side, 13 the rear and 19 the right side.
+EX5 frames: 1 = front, 7 = left side, 13 = rear, 19 = right side. The Geely Australia sets run the other way, and the profile handles that (`rotate_direction`).
 
 ## Configuration
 
@@ -64,14 +97,18 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 |---|---|---|---|
 | `type` | string | **required** | `custom:geely-ex5-card` |
 | `entity_prefix` | string | **required** | Shared prefix of the car's entities, e.g. `my_geely_ex5_1234` |
+| `model` | string | `auto` | `auto`, `ex5`, `ex2`, `starray_emi` or `generic`. Auto-detection reads the car's device (model / name) in the device registry, then the prefix |
 | `language` | string | `auto` | `auto` (Hebrew if your HA language is Hebrew, otherwise English), `en` or `he` |
-| `title` | string | `Geely EX5` | Card title |
+| `title` | string | model name | Card title |
 | `climate_entity` | string | auto-detected | Pre-conditioning climate entity. Auto-detection looks for `climate.<prefix>_climate`, then any climate entity whose name matches the end of the prefix. Set it if detection picks nothing or the wrong entity |
-| `color` | string | `silver` | Image folder name used by the default `image_base` |
-| `image_base` | string | `/local/geely-ex5/<color>/` | URL folder that contains `1.webp` … `24.webp` |
+| `color` | string | model default | Image folder name used by the default `image_base` |
+| `image_base` | string | `/local/geely-ex5/<model>/<color>/` | URL folder that contains `1.webp` … `N.webp` |
 | `image_ext` | string | `webp` | Image file extension |
-| `frames` | number | `24` | Number of rotation frames |
-| `start_frame` | number | `5` | Frame shown at rest (5 = three-quarter front) |
+| `frames` | number | model default (24) | Number of rotation frames; `1` = a single static image |
+| `car_image` | string | – | URL of one image of your car. Disables rotation |
+| `start_frame` | number | model default | Frame shown at rest (EX5: 5, the three-quarter front) |
+| `rotate_direction` | number | model default | `1` or `-1`, if dragging turns your own frame set the wrong way |
+| `image_background` | string | model default | Panel color behind non-transparent frames, e.g. `'#f5f3f1'`; `null` for none |
 | `service_warning_days` | number | `14` | Show the service chip when days to service ≤ this |
 | `service_warning_km` | number | `1000` | …or when distance to service ≤ this (km) |
 | `low_tire_bar` | number | `2.3` | Tire pressure (bar) below which a tire is highlighted |
@@ -82,41 +119,47 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 type: custom:geely-ex5-card
 entity_prefix: my_geely_ex5_1234
 language: auto
+model: auto        # or ex5 / ex2 / starray_emi
 color: silver
-start_frame: 5
 ```
 
-In a sections view the card takes the full width of its section; give the section `column_span: 2` or more for the two-column layout.
+In a sections view the card takes the full width of its section. Give the section `column_span: 2` or more to get the two-column layout.
 
 ### Entities used
 
-All are `<domain>.<entity_prefix>_<key>`; missing entities are simply hidden.
+All are `<domain>.<entity_prefix>_<key>`. Missing entities are simply hidden.
 
-- `sensor`: `battery`, `electric_range`, `range_at_full_charge`, `charger_connection`, `charging_power`, `time_to_full_charge`, `interior_temperature`, `exterior_temperature`, `tire_pressure_fl/fr/rl/rr`, `days_to_service`, `distance_to_service`, `total_mileage`, `average_consumption`, `last_trip`, `engine_state`, `last_updated`, `car_reported_at`
-- `binary_sensor`: `connected`, `charger_plug`, `door_driver`, `door_passenger`, `door_rear_left`, `door_rear_right`, `trunk`, `hood`
-- `lock.…_doors`, `switch.…_charging`, `switch.…_defrost`, `cover.…_all_windows`, `cover.…_sunroof`, `cover.…_sunshade`, `select.…_seat_heat_driver/passenger`, `select.…_seat_vent_driver/passenger`, `button.…_find_car`, `button.…_refresh_data`, `device_tracker.…_location`, and the climate entity
+- `sensor`: `battery`, `electric_range`, `range_at_full_charge`, `charger_connection`, `charging_power`, `time_to_full_charge`, `interior_temperature`, `exterior_temperature`, `tire_pressure_fl/fr/rl/rr`, `days_to_service`, `distance_to_service`, `total_mileage`, `average_consumption`, `last_trip`, `engine_state`, `last_updated`, `car_reported_at`; PHEV: `fuel_level`, `fuel_level_percent`, `fuel_range`, `combined_range`
+- `binary_sensor`: `connected`, `charger_plug`, `door_driver`, `door_passenger`, `door_rear_left`, `door_rear_right`, `trunk`, `hood`; PHEV: `fuel_flap`
+- `lock.…_doors`, `switch.…_charging`, `switch.…_defrost`, `cover.…_all_windows`, `cover.…_sunroof`, `cover.…_sunshade`, `select.…_seat_heat_*` / `select.…_seat_vent_*` (driver, passenger, rear_left, rear_right), `button.…_find_car`, `button.…_refresh_data`, `button.…_unlock_trunk`, `button.…_unlock_frunk`, `device_tracker.…_location`, and the climate entity
 
 ## Screenshots
 
-| English – dark | English – details open |
+| EX5 – English, dark | EX5 – details open |
 |---|---|
 | ![](docs/screenshot-en-desktop.png) | ![](docs/screenshot-en-details.png) |
 
-| English – phone | English – phone, light theme | Hebrew – phone |
+| EX5 – phone | EX5 – phone, light theme | EX5 – Hebrew, phone |
 |---|---|---|
 | ![](docs/screenshot-en-phone.png) | ![](docs/screenshot-en-phone-light.png) | ![](docs/screenshot-he-phone.png) |
 
-Hebrew (RTL), desktop:
+EX5 – Hebrew (RTL), desktop:
 
 ![](docs/screenshot-he-desktop.png)
 
+| EX2 – charging, trunk open, details | Starray EM-i (PHEV) – fuel tile | Starray EM-i – Hebrew, light |
+|---|---|---|
+| ![](docs/screenshot-ex2-en-desktop.png) | ![](docs/screenshot-starray-emi-en-desktop.png) | ![](docs/screenshot-starray-emi-he-phone-light.png) |
+
 ## עברית
 
-כרטיס Lovelace ל-Geely EX5 עם תצוגת 360° בגרירה, סוללה וטווח, טעינה, לחץ צמיגים, טמפרטורה, נעילה ובקרות מהירות. הממשק זמין בעברית (מימין לשמאל) ובאנגלית.
+כרטיס Lovelace לרכבי Geely (EX5, ‏EX2/E2 ו-Starray EM-i) עם תצוגת 360° בגרירה, סוללה וטווח, דלק (בפלאג-אין), טעינה, לחץ צמיגים, טמפרטורה, נעילה ובקרות מהירות. הממשק זמין בעברית (מימין לשמאל) ובאנגלית.
 
+- הנתונים מגיעים מהאינטגרציה [Geely Connect](https://github.com/YossiKon/geely-connect) של [@YossiKon](https://github.com/YossiKon). חובה להגדיר `entity_prefix`.
 - השפה נבחרת אוטומטית לפי שפת Home Assistant, או בכפייה עם `language: he`.
-- נדרשת האינטגרציה Geely Connect. חובה להגדיר `entity_prefix`.
-- תמונות הרכב אינן כלולות במאגר (זכויות יוצרים של Geely). הורידו אותן עם `scripts/fetch-images.sh` והעתיקו ל-`/config/www/geely-ex5/<צבע>/`.
+- דגם הרכב מזוהה אוטומטית. אפשר לקבוע אותו ידנית עם `model`.
+- תמונות הרכב אינן כלולות במאגר (זכויות יוצרים של Geely). הורידו אותן עם `scripts/fetch-images.sh` והעתיקו ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
+- כרטיס לא רשמי, ללא קשר ל-Geely.
 
 ```yaml
 type: custom:geely-ex5-card
@@ -126,7 +169,7 @@ language: he
 
 ## Disclaimer
 
-Not affiliated with or endorsed by Geely. "Geely" and "EX5" are trademarks of their respective owners. Car images are © Geely and are fetched by the user; they are not part of this project or its license.
+Unofficial project, not affiliated with or endorsed by Geely. "Geely", "EX5", "EX2" and "Starray" are trademarks of their respective owners. Car images are © Geely and are fetched by the user. They are not part of this project or its license.
 
 ## License
 
