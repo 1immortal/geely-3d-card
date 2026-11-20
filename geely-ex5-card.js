@@ -1,0 +1,583 @@
+/*!
+ * Geely EX5 Card - a Home Assistant Lovelace card for the Geely EX5
+ * (entities from the Geely Connect custom integration).
+ * Vanilla web component, no build step, no external dependencies.
+ * https://github.com/1immortal/geely-ex5-card - MIT License
+ */
+const GEC_VERSION = '1.1.0';
+const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
+
+const GEC_I18N = {
+  en: {
+    loading: 'Loading…', drag: 'Drag to rotate', details: 'Details & controls', yes: 'Confirm', no: 'Cancel',
+    connected: 'Connected', disconnected: 'Offline', home: 'Home', away: 'Away', engine_on: 'Engine on', parked: 'Parked',
+    updated: 'Updated {t}', car_reported: 'Car last reported {t}', now: 'just now',
+    locked: 'Locked', unlocked: 'Unlocked',
+    door_driver: 'Driver door open', door_passenger: 'Passenger door open', door_rear_left: 'Rear left door open',
+    door_rear_right: 'Rear right door open', trunk: 'Trunk open', hood: 'Hood open', windows_open: 'Windows open', sunroof_open: 'Sunroof open',
+    service_overdue: 'Service overdue', service_today: 'Service today', service_tomorrow: 'Service tomorrow',
+    service_days: 'Service in {n} days', service_km: 'Service in {n} km',
+    battery_range: 'Battery & range', full_range: 'Full charge: {n} km', km: 'km', kw: 'kW', min: 'min', h: 'h',
+    charging: 'Charging', plugged: 'Plugged in', power: 'Power', to_full: 'Until full',
+    temperature: 'Temperature', cabin: 'Cabin', outside: 'Outside', tires: 'Tire pressure',
+    unlock: 'Unlock', lock: 'Lock', precond: 'Pre-condition', climate_off: 'Climate off', start_charge: 'Start charging',
+    stop_charge: 'Stop charging', find: 'Find car', refresh: 'Refresh',
+    odometer: 'Odometer', to_service: 'To service', consumption: 'Consumption', last_trip: 'Last trip', kwh100: 'kWh/100 km',
+    seat_heat_driver: 'Driver seat heating', seat_heat_passenger: 'Passenger seat heating',
+    seat_vent_driver: 'Driver seat ventilation', seat_vent_passenger: 'Passenger seat ventilation',
+    windows: 'Windows', sunroof: 'Sunroof', sunshade: 'Sunshade', defrost: 'Defrost',
+    open: 'Open', close: 'Close', is_open: 'open', is_closed: 'closed', unavailable: 'unavailable', on: 'On', off: 'Off',
+    opt_off: 'Off', opt_low: 'Low', opt_medium: 'Medium', opt_high: 'High', no_controls: 'No controls available',
+    c_unlock: 'Unlock the car?', c_start: 'Start charging?', c_stop: 'Stop charging?',
+    c_open_all_windows: 'Open the windows?', c_open_sunroof: 'Open the sunroof?', c_open_sunshade: 'Open the sunshade?',
+    t_sent: 'Sent to car', t_unlock: 'Unlock command sent', t_lock: 'Lock command sent', t_clim_on: 'Pre-conditioning on',
+    t_clim_off: 'Pre-conditioning off', t_start: 'Start charging sent', t_stop: 'Stop charging sent',
+    t_find: 'The car will flash and beep', t_refresh: 'Refreshing data…', t_updated: 'Updated', t_err: 'Error: {m}', t_failed: 'command failed',
+    no_prefix: 'geely-ex5-card: "entity_prefix" is required (e.g. my_geely_ex5_1234)',
+  },
+  he: {
+    loading: 'טוען…', drag: 'גררו לסיבוב', details: 'פרטים ובקרות', yes: 'אישור', no: 'ביטול',
+    connected: 'מחובר', disconnected: 'לא מחובר', home: 'בבית', away: 'מחוץ לבית', engine_on: 'מנוע פועל', parked: 'חונה',
+    updated: 'עודכן {t}', car_reported: 'דיווח אחרון מהרכב {t}', now: 'עכשיו',
+    locked: 'נעול', unlocked: 'לא נעול',
+    door_driver: 'דלת נהג פתוחה', door_passenger: 'דלת נוסע פתוחה', door_rear_left: 'דלת אחורית שמאל פתוחה',
+    door_rear_right: 'דלת אחורית ימין פתוחה', trunk: 'תא מטען פתוח', hood: 'מכסה מנוע פתוח', windows_open: 'חלונות פתוחים', sunroof_open: 'גג נפתח פתוח',
+    service_overdue: 'טיפול באיחור', service_today: 'טיפול היום', service_tomorrow: 'טיפול מחר',
+    service_days: 'טיפול בעוד {n} ימים', service_km: 'טיפול בעוד {n} ק״מ',
+    battery_range: 'סוללה וטווח', full_range: 'בטעינה מלאה {n} ק״מ', km: 'ק״מ', kw: 'קו״ט', min: 'דק׳', h: 'שע׳',
+    charging: 'בטעינה', plugged: 'מחובר למטען', power: 'הספק', to_full: 'עד טעינה מלאה',
+    temperature: 'טמפרטורה', cabin: 'בתא', outside: 'בחוץ', tires: 'לחץ צמיגים',
+    unlock: 'פתח נעילה', lock: 'נעל', precond: 'מיזוג מראש', climate_off: 'כבה מיזוג', start_charge: 'התחל טעינה',
+    stop_charge: 'עצור טעינה', find: 'מצא רכב', refresh: 'רענן',
+    odometer: 'מד מרחק', to_service: 'לטיפול', consumption: 'צריכה', last_trip: 'נסיעה אחרונה', kwh100: 'קוט״ש/100',
+    seat_heat_driver: 'חימום מושב נהג', seat_heat_passenger: 'חימום מושב נוסע',
+    seat_vent_driver: 'אוורור מושב נהג', seat_vent_passenger: 'אוורור מושב נוסע',
+    windows: 'חלונות', sunroof: 'גג נפתח', sunshade: 'וילון גג', defrost: 'הפשרת שמשות',
+    open: 'פתח', close: 'סגור', is_open: 'פתוח', is_closed: 'סגור', unavailable: 'לא זמין', on: 'פועל', off: 'כבוי',
+    opt_off: 'כבוי', opt_low: 'נמוך', opt_medium: 'בינוני', opt_high: 'גבוה', no_controls: 'אין בקרות זמינות',
+    c_unlock: 'לפתוח את נעילת הרכב?', c_start: 'להתחיל טעינה?', c_stop: 'לעצור את הטעינה?',
+    c_open_all_windows: 'לפתוח את החלונות?', c_open_sunroof: 'לפתוח את הגג הנפתח?', c_open_sunshade: 'לפתוח את וילון הגג?',
+    t_sent: 'נשלח לרכב', t_unlock: 'פקודת פתיחה נשלחה', t_lock: 'פקודת נעילה נשלחה', t_clim_on: 'מיזוג מראש הופעל',
+    t_clim_off: 'מיזוג מראש כובה', t_start: 'התחלת טעינה נשלחה', t_stop: 'עצירת טעינה נשלחה',
+    t_find: 'הרכב יצפור ויהבהב', t_refresh: 'מרענן נתונים…', t_updated: 'עודכן', t_err: 'שגיאה: {m}', t_failed: 'הפקודה נכשלה',
+    no_prefix: 'geely-ex5-card: חובה להגדיר "entity_prefix"',
+  },
+};
+
+class GeelyEx5Card extends HTMLElement {
+  static getStubConfig(hass) {
+    let prefix = 'my_geely_ex5_xxxx';
+    if (hass) {
+      const id = Object.keys(hass.states).find((e) => /^lock\..*geely.*_doors$/.test(e));
+      if (id) prefix = id.slice(5, -6);
+    }
+    return { entity_prefix: prefix };
+  }
+
+  setConfig(config) {
+    const c = config || {};
+    if (!c.entity_prefix) throw new Error(GEC_I18N.en.no_prefix);
+    const color = c.color || 'silver';
+    this._cfg = {
+      title: c.title || 'Geely EX5',
+      prefix: String(c.entity_prefix).replace(/^[a-z_]+\./, ''),
+      climate: c.climate_entity || null,
+      language: (c.language || 'auto').toLowerCase(),
+      base: (c.image_base || `/local/geely-ex5/${color}/`).replace(/\/?$/, '/'),
+      ext: c.image_ext || 'webp',
+      frames: Number(c.frames) || 24,
+      start: Number(c.start_frame) || 5,
+      service_days: c.service_warning_days ?? 14,
+      service_km: c.service_warning_km ?? 1000,
+      low_bar: c.low_tire_bar ?? 2.3,
+    };
+    this._pos = this._cfg.start - 1;
+    this._sig = null;
+    this._cur = null;
+    if (this._built) { this._built = false; this.shadowRoot.innerHTML = ''; }
+    if (this._hass) this.hass = this._hass;
+  }
+
+  getCardSize() { return 9; }
+  getGridOptions() { return { columns: 'full', min_columns: 6 }; }
+
+  /* ---------- i18n ---------- */
+  _langOf(hass) {
+    const l = this._cfg.language;
+    if (l === 'he' || l === 'en') return l;
+    const sys = String((hass && ((hass.locale && hass.locale.language) || hass.language)) || 'en').toLowerCase();
+    return sys.startsWith('he') || sys.startsWith('iw') ? 'he' : 'en';
+  }
+  _t(key, vars) {
+    let s = (GEC_I18N[this._lang] || GEC_I18N.en)[key] ?? GEC_I18N.en[key] ?? key;
+    if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, v);
+    return s;
+  }
+  get _locale() { return this._lang === 'he' ? 'he-IL' : 'en-US'; }
+
+  /* ---------- helpers ---------- */
+  _id(domain, key) { return `${domain}.${this._cfg.prefix}_${key}`; }
+  _s(id) { return this._hass && id && this._hass.states[id]; }
+  _v(id) { const s = this._s(id); return s && !GEC_BAD.includes(String(s.state).toLowerCase()) ? s.state : null; }
+  _n(id) { const v = this._v(id); const n = v == null ? NaN : parseFloat(v); return isFinite(n) ? n : null; }
+  _on(id) { return this._v(id) === 'on'; }
+  _fmt(n, d = 0) { return n == null ? '—' : Number(n).toLocaleString(this._locale, { maximumFractionDigits: d, minimumFractionDigits: d }); }
+  _esc(t) { return String(t).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+  _rel(iso) {
+    if (!iso) return null;
+    const t = Date.parse(iso); if (!isFinite(t)) return null;
+    const sec = Math.round((t - Date.now()) / 1000);
+    const a = Math.abs(sec);
+    if (a < 60) return this._t('now');
+    const rtf = new Intl.RelativeTimeFormat(this._lang, { numeric: 'auto' });
+    if (a < 3600) return rtf.format(Math.round(sec / 60), 'minute');
+    if (a < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
+    return rtf.format(Math.round(sec / 86400), 'day');
+  }
+  _climateId() {
+    if (this._cfg.climate) return this._cfg.climate;
+    if (this._climAuto !== undefined) return this._climAuto;
+    const p = this._cfg.prefix, ids = Object.keys(this._hass.states).filter((e) => e.startsWith('climate.'));
+    let found = ids.find((e) => e === `climate.${p}_climate`) || ids.find((e) => e.startsWith(`climate.${p}_`));
+    if (!found) {
+      // Some installs name the climate entity without the account-specific leading segment(s).
+      found = ids.find((e) => { const o = e.slice(8).replace(/_(climate|pre_?conditioning)$/, ''); return o.length > 3 && p.endsWith(o); });
+    }
+    this._climAuto = found || null;
+    return this._climAuto;
+  }
+  _tireBar(id) {
+    const s = this._s(id), v = this._n(id); if (v == null) return null;
+    const u = String((s.attributes && s.attributes.unit_of_measurement) || 'psi').toLowerCase();
+    if (u === 'bar') return v;
+    if (u === 'kpa') return v / 100;
+    return v * 0.0689476;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._cfg) return;
+    const lang = this._langOf(hass);
+    if (!this._built) { this._lang = lang; this._build(); }
+    if (lang !== this._lang) { this._lang = lang; this._applyStatic(); }
+    const dark = !!(hass.themes && hass.themes.darkMode);
+    this._card.classList.toggle('light', !dark);
+    const sig = this._signature(dark);
+    if (sig !== this._sig) { this._sig = sig; this._render(); }
+  }
+
+  _signature(dark) {
+    const p = `.${this._cfg.prefix}_`, clim = this._climateId();
+    const parts = [this._lang, dark ? 'd' : 'l', Math.floor(Date.now() / 60000)];
+    for (const [id, s] of Object.entries(this._hass.states)) {
+      if (id.includes(p) || id === clim) parts.push(id, s.state, s.attributes.current_position);
+    }
+    return parts.join('|');
+  }
+
+  /* ---------- static DOM ---------- */
+  _build() {
+    this._built = true;
+    const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
+    const N = this._cfg.frames;
+    let imgs = '';
+    for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._cfg.base}${i}.${this._cfg.ext}" data-f="${i - 1}">`;
+    root.innerHTML = `
+<style>
+  :host { display:block; }
+  ha-card { --zc-bg: linear-gradient(180deg,#161c28 0%,#10141d 55%,#0d1118 100%); --zc-fg:#e8eef8; --zc-mut:#9aa3b2;
+    --zc-pan:rgba(255,255,255,.045); --zc-pan2:rgba(255,255,255,.08); --zc-brd:rgba(255,255,255,.07);
+    --zc-green:#3fbf5f; --zc-red:#ff5252; --zc-amber:#ffc04d; --zc-blue:#4fb3ff; --zc-purple:#b59bff; --zc-teal:#5ed6a8;
+    --zc-glow:rgba(79,179,255,.16); --zc-shadow:rgba(0,0,0,.65);
+    display:block; overflow:hidden; position:relative; background:var(--zc-bg); color:var(--zc-fg);
+    border-radius:var(--ha-card-border-radius,12px); --zc-font: Rubik, var(--ha-font-family-body, var(--paper-font-body1_-_font-family, system-ui)), -apple-system, 'Segoe UI', Roboto, 'Noto Sans Hebrew', Arial, sans-serif; font-family:var(--zc-font);
+    container-type:inline-size; }
+  ha-card.light { --zc-bg: linear-gradient(180deg,#f7f9fc 0%,#eef2f8 100%); --zc-fg:#1b2230; --zc-mut:#6b7280;
+    --zc-pan:rgba(16,20,29,.04); --zc-pan2:rgba(16,20,29,.08); --zc-brd:rgba(16,20,29,.08);
+    --zc-green:#23a047; --zc-red:#e53935; --zc-amber:#d98b00; --zc-blue:#1f88e5; --zc-purple:#7c5cff; --zc-teal:#139a74;
+    --zc-glow:rgba(31,136,229,.12); --zc-shadow:rgba(16,20,29,.35); }
+  .main { display:grid; grid-template-columns:1fr; gap:4px; padding:14px 14px 12px; }
+  @container (min-width: 760px) { .main { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap:18px; padding:18px; }
+    .left { display:flex; flex-direction:column; } .stage { margin-block:auto; } }
+  .left { min-width:0; }
+  .head { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+  .title { font-weight:700; font-size:20px; letter-spacing:.2px; unicode-bidi:isolate; }
+  .sub { font-size:12.5px; color:var(--zc-mut); margin-top:2px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--zc-green); box-shadow:0 0 8px var(--zc-green); display:inline-block; }
+  .dot.off { background:var(--zc-mut); box-shadow:none; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; min-height:26px; }
+  .chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; font-size:12.5px; font-weight:500;
+    background:var(--zc-pan2); color:var(--zc-fg); cursor:pointer; border:1px solid var(--zc-brd); white-space:nowrap; }
+  .chip ha-icon { --mdc-icon-size:15px; }
+  .chip.ok { color:var(--zc-green); background:color-mix(in srgb, var(--zc-green) 12%, transparent); border-color:color-mix(in srgb, var(--zc-green) 30%, transparent); }
+  .chip.bad { color:#fff; background:var(--zc-red); border-color:transparent; }
+  .chip.warn { color:#1b1300; background:var(--zc-amber); border-color:transparent; }
+  .stage { position:relative; touch-action:pan-y; user-select:none; -webkit-user-select:none; cursor:grab; margin-top:4px;
+    aspect-ratio: 900/470; }
+  .stage.drag { cursor:grabbing; }
+  .stage::before { content:''; position:absolute; inset:8% 6% 4%; background:radial-gradient(ellipse at 50% 60%, var(--zc-glow), transparent 68%); pointer-events:none; }
+  .floor { position:absolute; left:12%; right:12%; bottom:3%; height:9%; border-radius:50%;
+    background:radial-gradient(ellipse at center, var(--zc-shadow) 0%, transparent 70%); filter:blur(4px); pointer-events:none; }
+  .frames { position:absolute; inset:0; }
+  .frames img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; pointer-events:none; -webkit-user-drag:none; }
+  .frames img.on { opacity:1; }
+  .hint { position:absolute; bottom:4px; inset-inline-start:0; font-size:11.5px; color:var(--zc-mut); display:flex; align-items:center; gap:4px;
+    transition:opacity .6s; pointer-events:none; }
+  .hint ha-icon { --mdc-icon-size:16px; }
+  .hint.gone { opacity:0; }
+  .loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--zc-mut); font-size:12px; pointer-events:none; }
+  .side { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .tile { background:var(--zc-pan); border:1px solid var(--zc-brd); border-radius:12px; padding:10px 12px; cursor:pointer; min-width:0; }
+  .tile.wide { grid-column:1 / -1; }
+  .lbl { font-size:12px; color:var(--zc-mut); display:flex; align-items:center; gap:5px; }
+  .lbl ha-icon { --mdc-icon-size:15px; }
+  .big { font-size:22px; font-weight:700; line-height:1.15; }
+  .big small { font-size:13px; font-weight:500; color:var(--zc-mut); margin-inline-start:3px; }
+  .bat { display:flex; align-items:center; gap:14px; }
+  .ring { position:relative; width:74px; height:74px; flex:none; }
+  .ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+  .ring .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:17px; direction:ltr; }
+  .bar { height:6px; border-radius:999px; background:var(--zc-pan2); overflow:hidden; margin-top:7px; }
+  .bar > i { display:block; height:100%; border-radius:999px; }
+  .temps { display:flex; gap:14px; }
+  .temps > div { flex:1; min-width:0; }
+  .tires { display:grid; grid-template-columns:1fr 34px 1fr; grid-template-rows:auto auto; gap:4px 8px; align-items:center; direction:ltr; margin-top:6px; }
+  .tires .car { grid-column:2; grid-row:1 / span 2; height:58px; border-radius:12px 12px 10px 10px; border:2px solid var(--zc-pan2); position:relative; }
+  .tires .car::before { content:''; position:absolute; left:4px; right:4px; top:9px; height:9px; border-radius:4px 4px 2px 2px; background:var(--zc-pan2); }
+  .tp { font-weight:600; font-size:15px; text-align:center; padding:3px 0; border-radius:8px; background:var(--zc-pan); }
+  .tp small { font-size:10.5px; color:var(--zc-mut); font-weight:400; margin-inline-start:2px; }
+  .tp.low { background:var(--zc-red); color:#fff; } .tp.low small { color:#fff; }
+  .acts { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+  .act { background:var(--zc-pan); border:1px solid var(--zc-brd); border-radius:12px; padding:9px 4px 7px; cursor:pointer; color:var(--zc-fg);
+    display:flex; flex-direction:column; align-items:center; gap:4px; font:500 11.5px var(--zc-font); transition:background .15s, transform .1s; }
+  .act:active { transform:scale(.96); }
+  .act ha-icon { --mdc-icon-size:22px; color:var(--zc-mut); }
+  .act.on { background:color-mix(in srgb, var(--c, var(--zc-blue)) 16%, transparent); border-color:color-mix(in srgb, var(--c, var(--zc-blue)) 40%, transparent); }
+  .act.on ha-icon { color:var(--c, var(--zc-blue)); }
+  .act[disabled] { opacity:.4; pointer-events:none; }
+  .stats { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12px; color:var(--zc-mut); padding:0 2px; }
+  .stats b { color:var(--zc-fg); font-weight:600; }
+  .more { display:flex; align-items:center; justify-content:center; gap:4px; background:none; border:none; color:var(--zc-mut); cursor:pointer;
+    font:500 12.5px var(--zc-font); padding:4px; width:100%; }
+  .more ha-icon { --mdc-icon-size:18px; transition:transform .2s; }
+  .more.open ha-icon { transform:rotate(180deg); }
+  .det { display:none; flex-direction:column; gap:8px; background:var(--zc-pan); border:1px solid var(--zc-brd); border-radius:12px; padding:10px 12px; }
+  .det.open { display:flex; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:30px; }
+  .row .k { font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .row .k ha-icon { --mdc-icon-size:18px; color:var(--zc-mut); }
+  .seg { display:inline-flex; background:var(--zc-pan2); border-radius:999px; padding:2px; gap:2px; }
+  .seg button, .btn { border:none; background:none; color:var(--zc-fg); font:500 12px var(--zc-font); padding:4px 10px; border-radius:999px; cursor:pointer; }
+  .seg button.sel { background:var(--c, var(--zc-amber)); color:#1b1300; }
+  .btn { background:var(--zc-pan2); }
+  .btn.sel { background:var(--zc-blue); color:#fff; }
+  .muted { color:var(--zc-mut); font-size:12px; }
+  .modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:10; backdrop-filter:blur(2px); }
+  .modal.show { display:flex; }
+  .box { background:var(--card-background-color, #1c2230); color:var(--primary-text-color, #e8eef8); border-radius:16px; padding:18px; width:min(320px, 86%); box-shadow:0 10px 40px rgba(0,0,0,.5); text-align:center; }
+  ha-card.light .box { background:#fff; color:#1b2230; }
+  .box p { margin:4px 0 16px; font-size:15px; line-height:1.4; }
+  .box .b2 { display:flex; gap:10px; justify-content:center; }
+  .box button { flex:1; border:none; border-radius:10px; padding:9px; font:600 14px var(--zc-font); cursor:pointer; }
+  .box .yes { background:var(--zc-red); color:#fff; } .box .no { background:var(--zc-pan2); color:inherit; }
+  .toast { position:absolute; left:50%; bottom:14px; transform:translate(-50%,20px); opacity:0; background:rgba(12,16,26,.88); color:#fff; padding:6px 14px;
+    border-radius:999px; font-size:12.5px; transition:all .25s; pointer-events:none; z-index:11; white-space:nowrap; }
+  .toast.show { opacity:1; transform:translate(-50%,0); }
+</style>
+<ha-card>
+  <div class="main">
+    <div class="left">
+      <div class="head"><div><div class="title"></div><div class="sub"></div></div><div class="upd muted"></div></div>
+      <div class="chips"></div>
+      <div class="stage"><div class="floor"></div><div class="frames">${imgs}</div><div class="loading"></div>
+        <div class="hint"><ha-icon icon="mdi:rotate-360"></ha-icon><span></span></div></div>
+    </div>
+    <div class="side">
+      <div class="tiles"></div>
+      <div class="acts"></div>
+      <div class="stats"></div>
+      <button class="more"><span></span><ha-icon icon="mdi:chevron-down"></ha-icon></button>
+      <div class="det"></div>
+    </div>
+  </div>
+  <div class="modal"><div class="box"><p></p><div class="b2"><button class="yes"></button><button class="no"></button></div></div></div>
+  <div class="toast"></div>
+</ha-card>`;
+    const $ = (s) => root.querySelector(s);
+    this._card = $('ha-card');
+    this._el = { title: $('.title'), sub: $('.sub'), upd: $('.upd'), chips: $('.chips'), tiles: $('.tiles'), acts: $('.acts'),
+      stats: $('.stats'), det: $('.det'), more: $('.more'), modal: $('.modal'), toast: $('.toast'), stage: $('.stage'),
+      hint: $('.hint'), loading: $('.loading'), yes: $('.modal .yes'), no: $('.modal .no') };
+    this._applyStatic();
+    this._imgs = [...root.querySelectorAll('.frames img')];
+    let loaded = 0;
+    this._imgs.forEach((im) => {
+      const done = () => { if (++loaded >= this._imgs.length) this._el.loading.remove(); };
+      if (im.complete) done(); else { im.addEventListener('load', done, { once: true }); im.addEventListener('error', done, { once: true }); }
+    });
+    this._showFrame();
+    this._setupDrag();
+    this._el.more.addEventListener('click', () => {
+      this._detOpen = !this._detOpen;
+      this._el.more.classList.toggle('open', this._detOpen); this._el.det.classList.toggle('open', this._detOpen);
+    });
+    root.addEventListener('click', (ev) => this._onClick(ev));
+    this._el.no.addEventListener('click', () => this._closeModal());
+    this._el.yes.addEventListener('click', () => { const fn = this._pending; this._closeModal(); if (fn) fn(); });
+    this._el.modal.addEventListener('click', (e) => { if (e.target === this._el.modal) this._closeModal(); });
+  }
+
+  _applyStatic() {
+    const rtl = this._lang === 'he';
+    this._card.setAttribute('dir', rtl ? 'rtl' : 'ltr');
+    this._card.setAttribute('lang', this._lang);
+    this._el.loading.textContent = this._t('loading');
+    this._el.hint.querySelector('span').textContent = this._t('drag');
+    this._el.more.querySelector('span').textContent = this._t('details');
+    this._el.yes.textContent = this._t('yes');
+    this._el.no.textContent = this._t('no');
+    this._sig = null;
+  }
+
+  /* ---------- rotation ---------- */
+  _showFrame() {
+    const N = this._cfg.frames;
+    const f = ((Math.round(this._pos) % N) + N) % N;
+    if (f === this._cur) return;
+    if (this._cur != null && this._imgs[this._cur]) this._imgs[this._cur].classList.remove('on');
+    this._imgs[f] && this._imgs[f].classList.add('on');
+    this._cur = f;
+  }
+  _setupDrag() {
+    const st = this._el.stage;
+    let id = null, x0 = 0, p0 = 0, lastX = 0, lastT = 0, vel = 0, moved = false;
+    const step = () => Math.max(10, st.clientWidth / 34);
+    st.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button > 0) return;
+      cancelAnimationFrame(this._raf);
+      id = e.pointerId; x0 = lastX = e.clientX; lastT = e.timeStamp; p0 = this._pos; vel = 0; moved = false;
+    });
+    st.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== id) return;
+      const dx = e.clientX - x0;
+      if (!moved && Math.abs(dx) > 6) { moved = true; st.classList.add('drag'); try { st.setPointerCapture(id); } catch (_) {} this._el.hint.classList.add('gone'); }
+      if (!moved) return;
+      this._pos = p0 - dx / step();
+      const dt = Math.max(1, e.timeStamp - lastT);
+      vel = 0.7 * vel + 0.3 * (-(e.clientX - lastX) / step() / dt);
+      lastX = e.clientX; lastT = e.timeStamp;
+      this._showFrame();
+    });
+    const end = (e) => {
+      if (e.pointerId !== id) return;
+      id = null; st.classList.remove('drag');
+      if (!moved) { if (e.type === 'pointerup') this._more(this._id('device_tracker', 'location')); return; }
+      let v = Math.max(-0.05, Math.min(0.05, vel)); let t = performance.now();
+      const tick = (now) => {
+        const dt = now - t; t = now; this._pos += v * dt; v *= Math.pow(0.992, dt);
+        this._showFrame();
+        if (Math.abs(v) > 0.0006) this._raf = requestAnimationFrame(tick);
+        else { this._pos = Math.round(this._pos); this._showFrame(); }
+      };
+      this._raf = requestAnimationFrame(tick);
+    };
+    st.addEventListener('pointerup', end);
+    st.addEventListener('pointercancel', end);
+  }
+
+  /* ---------- actions ---------- */
+  _more(entityId) {
+    if (!entityId || !this._s(entityId)) return;
+    const ev = new Event('hass-more-info', { bubbles: true, composed: true });
+    ev.detail = { entityId };
+    this.dispatchEvent(ev);
+  }
+  _svc(domain, service, data, msgKey) {
+    this._hass.callService(domain, service, data).then(
+      () => this._toast(this._t(msgKey || 't_sent')),
+      (err) => this._toast(this._t('t_err', { m: (err && err.message) || this._t('t_failed') })));
+  }
+  _confirm(text, fn) { this._pending = fn; this._el.modal.querySelector('p').textContent = text; this._el.modal.classList.add('show'); }
+  _closeModal() { this._pending = null; this._el.modal.classList.remove('show'); }
+  _toast(t) {
+    const el = this._el.toast; el.textContent = t; el.classList.add('show');
+    clearTimeout(this._tt); this._tt = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+  _onClick(ev) {
+    for (const n of ev.composedPath()) {
+      if (!n.dataset) continue;
+      if (n.dataset.act) { ev.stopPropagation(); return this._act(n.dataset.act, n.dataset); }
+      if (n.dataset.more) return this._more(n.dataset.more);
+      if (n === this._card) return;
+    }
+  }
+  _act(a, d) {
+    const lock = this._id('lock', 'doors'), chg = this._id('switch', 'charging'), clim = this._climateId();
+    switch (a) {
+      case 'lock':
+        if (this._v(lock) === 'locked') this._confirm(this._t('c_unlock'), () => this._svc('lock', 'unlock', { entity_id: lock }, 't_unlock'));
+        else this._svc('lock', 'lock', { entity_id: lock }, 't_lock');
+        break;
+      case 'climate': {
+        const s = this._s(clim); if (!s) return;
+        if (s.state === 'off') {
+          const m = (s.attributes.hvac_modes || []).find((x) => x !== 'off') || 'heat_cool';
+          this._svc('climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: m }, 't_clim_on');
+        } else this._svc('climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: 'off' }, 't_clim_off');
+        break;
+      }
+      case 'charge': {
+        const on = this._on(chg);
+        this._confirm(this._t(on ? 'c_stop' : 'c_start'), () => this._svc('switch', on ? 'turn_off' : 'turn_on', { entity_id: chg }, on ? 't_stop' : 't_start'));
+        break;
+      }
+      case 'find': this._svc('button', 'press', { entity_id: this._id('button', 'find_car') }, 't_find'); break;
+      case 'refresh': this._svc('button', 'press', { entity_id: this._id('button', 'refresh_data') }, 't_refresh'); break;
+      case 'select': this._svc('select', 'select_option', { entity_id: d.ent, option: d.opt }, 't_updated'); break;
+      case 'switch': this._svc('switch', this._on(d.ent) ? 'turn_off' : 'turn_on', { entity_id: d.ent }); break;
+      case 'cover': {
+        const go = () => this._svc('cover', d.dir === 'open' ? 'open_cover' : 'close_cover', { entity_id: d.ent });
+        if (d.dir === 'open') this._confirm(this._t('c_open_' + d.key), go); else go();
+        break;
+      }
+    }
+  }
+
+  /* ---------- render ---------- */
+  _render() {
+    const E = this._el, T = (k, v) => this._t(k, v), I = (k) => this._id('sensor', k), B = (k) => this._id('binary_sensor', k);
+    const esc = (t) => this._esc(t);
+    const clim = this._climateId();
+    // header
+    E.title.textContent = this._cfg.title;
+    const trk = this._s(this._id('device_tracker', 'location'));
+    const loc = !trk ? null : trk.state === 'home' ? T('home') : trk.state === 'not_home' ? T('away') : GEC_BAD.includes(trk.state) ? null : trk.state;
+    const connected = this._on(B('connected'));
+    const eng = (this._v(I('engine_state')) || '').toLowerCase();
+    const sub = [`<span class="dot ${connected ? '' : 'off'}"></span>${T(connected ? 'connected' : 'disconnected')}`];
+    if (loc) sub.push(`<span data-more="${trk.entity_id}" style="cursor:pointer">· ${esc(loc)}</span>`);
+    if (eng === 'on' || eng === 'running') sub.push('· ' + T('engine_on'));
+    else if (eng) sub.push('· ' + T('parked'));
+    E.sub.innerHTML = sub.join(' ');
+    const upd = this._rel(this._v(I('last_updated')));
+    const rep = this._rel(this._v(I('car_reported_at')));
+    E.upd.innerHTML = upd ? `<span data-more="${I('last_updated')}" style="cursor:pointer" title="${rep ? esc(T('car_reported', { t: rep })) : ''}">${esc(T('updated', { t: upd }))}</span>` : '';
+
+    // chips
+    const chips = [];
+    const lockId = this._id('lock', 'doors'), lockS = this._v(lockId);
+    if (lockS === 'locked') chips.push(`<span class="chip ok" data-more="${lockId}"><ha-icon icon="mdi:lock"></ha-icon>${T('locked')}</span>`);
+    else if (lockS) chips.push(`<span class="chip bad" data-more="${lockId}"><ha-icon icon="mdi:lock-open-variant"></ha-icon>${lockS === 'unlocked' ? T('unlocked') : esc(lockS)}</span>`);
+    const opens = [['door_driver', 'mdi:car-door'], ['door_passenger', 'mdi:car-door'], ['door_rear_left', 'mdi:car-door'],
+      ['door_rear_right', 'mdi:car-door'], ['trunk', 'mdi:car-back'], ['hood', 'mdi:car-lifted-pickup']];
+    for (const [k, ic] of opens) if (this._on(B(k))) chips.push(`<span class="chip bad" data-more="${B(k)}"><ha-icon icon="${ic}"></ha-icon>${T(k)}</span>`);
+    for (const [k, key] of [['all_windows', 'windows_open'], ['sunroof', 'sunroof_open']]) {
+      const s = this._s(this._id('cover', k));
+      if (s && (s.state === 'open' || s.state === 'opening' || (s.attributes.current_position || 0) > 0))
+        chips.push(`<span class="chip bad" data-more="${s.entity_id}"><ha-icon icon="mdi:window-open-variant"></ha-icon>${T(key)}</span>`);
+    }
+    const days = this._n(I('days_to_service')), dist = this._n(I('distance_to_service'));
+    if (days != null && days <= this._cfg.service_days) {
+      const t = days < 0 ? T('service_overdue') : days === 0 ? T('service_today') : days === 1 ? T('service_tomorrow') : T('service_days', { n: this._fmt(days) });
+      chips.push(`<span class="chip ${days <= 0 ? 'bad' : 'warn'}" data-more="${I('days_to_service')}"><ha-icon icon="mdi:wrench"></ha-icon>${t}</span>`);
+    } else if (dist != null && dist <= this._cfg.service_km) {
+      chips.push(`<span class="chip warn" data-more="${I('distance_to_service')}"><ha-icon icon="mdi:wrench"></ha-icon>${T('service_km', { n: this._fmt(dist) })}</span>`);
+    }
+    E.chips.innerHTML = chips.join('');
+
+    // tiles
+    const bat = this._n(I('battery')), rng = this._n(I('electric_range')), full = this._n(I('range_at_full_charge'));
+    const col = bat == null ? 'var(--zc-mut)' : bat > 50 ? 'var(--zc-green)' : bat > 20 ? 'var(--zc-amber)' : 'var(--zc-red)';
+    const plugged = this._on(B('charger_plug'));
+    const conn = (this._v(I('charger_connection')) || '').toLowerCase();
+    const charging = this._on(this._id('switch', 'charging')) || (this._n(I('charging_power')) || 0) > 0.05;
+    const showChg = plugged || charging || (conn && conn !== 'disconnected');
+    const C = 2 * Math.PI * 31, frac = bat == null ? 0 : Math.max(0, Math.min(100, bat)) / 100;
+    const tiles = [];
+    tiles.push(`<div class="tile wide" data-more="${I('battery')}"><div class="bat">
+      <div class="ring"><svg viewBox="0 0 74 74"><circle cx="37" cy="37" r="31" fill="none" stroke="var(--zc-pan2)" stroke-width="7"/>
+        <circle cx="37" cy="37" r="31" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}"/></svg>
+        <div class="pct">${bat == null ? '—' : this._fmt(bat) + '%'}</div></div>
+      <div style="flex:1;min-width:0"><div class="lbl"><ha-icon icon="${charging ? 'mdi:battery-charging' : 'mdi:battery'}"></ha-icon>${T('battery_range')}</div>
+        <div class="big">${this._fmt(rng)}<small>${T('km')}</small></div>
+        <div class="muted">${full != null ? T('full_range', { n: this._fmt(full) }) : ''}</div>
+        <div class="bar"><i style="width:${(frac * 100).toFixed(0)}%;background:${col}"></i></div></div></div></div>`);
+    if (showChg) {
+      const pw = this._n(I('charging_power')), ttf = this._n(I('time_to_full_charge'));
+      const ttfS = ttf == null ? '—' : ttf >= 60 ? `${Math.floor(ttf / 60)}:${String(Math.round(ttf % 60)).padStart(2, '0')} ${T('h')}` : `${this._fmt(ttf)} ${T('min')}`;
+      tiles.push(`<div class="tile wide" data-more="${I('charging_power')}" style="border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent)">
+        <div class="lbl" style="color:var(--zc-teal)"><ha-icon icon="mdi:ev-plug-type2"></ha-icon>${T(charging ? 'charging' : 'plugged')}</div>
+        <div class="temps"><div><div class="big">${this._fmt(pw, 1)}<small>${T('kw')}</small></div><div class="muted">${T('power')}</div></div>
+        <div><div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div></div></div></div>`);
+    }
+    const tin = this._n(I('interior_temperature')), tout = this._n(I('exterior_temperature'));
+    tiles.push(`<div class="tile" data-more="${clim || I('interior_temperature')}"><div class="lbl"><ha-icon icon="mdi:thermometer"></ha-icon>${T('temperature')}</div>
+      <div class="temps"><div><div class="big">${this._fmt(tin, 1)}°</div><div class="muted">${T('cabin')}</div></div>
+      <div><div class="big">${this._fmt(tout, 1)}°</div><div class="muted">${T('outside')}</div></div></div></div>`);
+    const tcell = (k) => { const id = I('tire_pressure_' + k), b = this._tireBar(id); const low = b != null && b < this._cfg.low_bar;
+      return `<div class="tp ${low ? 'low' : ''}" data-more="${id}">${b == null ? '—' : b.toFixed(1)}<small>bar</small></div>`; };
+    tiles.push(`<div class="tile"><div class="lbl"><ha-icon icon="mdi:tire"></ha-icon>${T('tires')}</div>
+      <div class="tires">${tcell('fl')}<div class="car"></div>${tcell('fr')}${tcell('rl')}${tcell('rr')}</div></div>`);
+    E.tiles.innerHTML = tiles.join('');
+
+    // actions
+    const climS = this._s(clim);
+    const climOn = climS && !['off', ...GEC_BAD].includes(climS.state);
+    const chgS = this._s(this._id('switch', 'charging'));
+    const chgOn = !!(chgS && chgS.state === 'on');
+    const btn = (act, icon, label, on, color, ent) =>
+      `<button class="act ${on ? 'on' : ''}" data-act="${act}" ${!this._s(ent) ? 'disabled' : ''} style="${color ? '--c:' + color : ''}"><ha-icon icon="${icon}"></ha-icon><span>${label}</span></button>`;
+    E.acts.innerHTML = [
+      btn('lock', lockS === 'locked' ? 'mdi:lock' : 'mdi:lock-open-variant', T(lockS === 'locked' ? 'unlock' : 'lock'), lockS !== 'locked' && !!lockS, 'var(--zc-red)', lockId),
+      btn('climate', 'mdi:fan', T(climOn ? 'climate_off' : 'precond'), climOn, 'var(--zc-blue)', clim),
+      btn('charge', 'mdi:ev-station', T(chgOn ? 'stop_charge' : 'start_charge'), chgOn, 'var(--zc-teal)', this._id('switch', 'charging')),
+      btn('find', 'mdi:car-search', T('find'), false, null, this._id('button', 'find_car')),
+      btn('refresh', 'mdi:refresh', T('refresh'), false, null, this._id('button', 'refresh_data')),
+    ].join('');
+
+    // stats
+    const stat = (k, label, unit, d = 0) => { const v = this._n(I(k)); return v == null ? '' : `<span data-more="${I(k)}" style="cursor:pointer">${label} <b>${this._fmt(v, d)}</b> ${unit}</span>`; };
+    E.stats.innerHTML = [stat('total_mileage', T('odometer'), T('km')), stat('distance_to_service', T('to_service'), T('km')),
+      stat('average_consumption', T('consumption'), T('kwh100'), 1), stat('last_trip', T('last_trip'), T('km'), 1)].join('');
+
+    // details
+    const rows = [];
+    const seg = (key, icon, color) => {
+      const id = this._id('select', key), s = this._s(id); if (!s) return;
+      const opts = s.attributes.options || [];
+      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span><span class="seg" style="--c:${color}">${
+        opts.map((o) => { const lk = 'opt_' + String(o).toLowerCase(); const lbl = GEC_I18N.en[lk] ? T(lk) : o;
+          return `<button class="${s.state === o ? 'sel' : ''}" data-act="select" data-ent="${id}" data-opt="${esc(o)}">${esc(lbl)}</button>`; }).join('')}</span></div>`);
+    };
+    seg('seat_heat_driver', 'mdi:car-seat-heater', 'var(--zc-amber)');
+    seg('seat_heat_passenger', 'mdi:car-seat-heater', 'var(--zc-amber)');
+    seg('seat_vent_driver', 'mdi:car-seat-cooler', 'var(--zc-blue)');
+    seg('seat_vent_passenger', 'mdi:car-seat-cooler', 'var(--zc-blue)');
+    const cov = (key, label, icon) => {
+      const id = this._id('cover', key), s = this._s(id); if (!s) return;
+      const open = s.state === 'open' || (s.attributes.current_position || 0) > 0;
+      const stTxt = GEC_BAD.includes(s.state) ? T('unavailable') : T(open ? 'is_open' : 'is_closed');
+      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(label)} <span class="muted">· ${stTxt}</span></span><span style="display:flex;gap:6px">
+        <button class="btn ${open ? 'sel' : ''}" data-act="cover" data-dir="open" data-ent="${id}" data-key="${key}">${T('open')}</button>
+        <button class="btn ${!open ? 'sel' : ''}" data-act="cover" data-dir="close" data-ent="${id}" data-key="${key}">${T('close')}</button></span></div>`);
+    };
+    cov('all_windows', 'windows', 'mdi:car-door');
+    cov('sunroof', 'sunroof', 'mdi:car-select');
+    cov('sunshade', 'sunshade', 'mdi:blinds');
+    const sw = (key, icon) => {
+      const id = this._id('switch', key), s = this._s(id); if (!s) return;
+      const on = s.state === 'on';
+      rows.push(`<div class="row"><span class="k" data-more="${id}"><ha-icon icon="${icon}"></ha-icon>${T(key)}</span>
+        <span class="seg" style="--c:var(--zc-blue)"><button class="${on ? 'sel' : ''}" ${on ? '' : `data-act="switch" data-ent="${id}"`}>${T('on')}</button><button class="${!on ? 'sel' : ''}" ${!on ? '' : `data-act="switch" data-ent="${id}"`}>${T('off')}</button></span></div>`);
+    };
+    sw('defrost', 'mdi:car-defrost-front');
+    E.det.innerHTML = rows.length ? rows.join('') : `<div class="muted">${T('no_controls')}</div>`;
+  }
+}
+
+if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', GeelyEx5Card);
+window.customCards = window.customCards || [];
+if (!window.customCards.find((c) => c.type === 'geely-ex5-card'))
+  window.customCards.push({ type: 'geely-ex5-card', name: 'Geely EX5 Card', description: 'Geely EX5 status & controls with a drag-to-rotate 360° view', preview: false, documentationURL: 'https://github.com/1immortal/geely-ex5-card' });
+console.info(`%c GEELY-EX5-CARD %c ${GEC_VERSION} `, 'background:#4fb3ff;color:#10141d;font-weight:700', 'background:#10141d;color:#e8eef8');
