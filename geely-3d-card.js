@@ -4,16 +4,18 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.3.0';
+const GEC_VERSION = '1.4.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
- * clockwise seen from above, like geely.com's EX5 set; -1 = the opposite, like the Geely Australia sets).
+ * clockwise seen from above, like geely.com's EX5 and Geely Europe's E5 sets; -1 = the opposite, like the Geely Australia sets).
  * `studio` = background colour of frame sets that are not transparent (the stage is drawn as a matching panel).
  * Entities are always discovered at runtime; a block whose entities do not exist is hidden. */
 const GEC_MODELS = {
   ex5: { name: 'Geely EX5', drive: 'bev', frames: 24, start: 5, direction: 1, color: 'silver', ext: 'webp', studio: null,
     match: /(?:^|[^a-z0-9])ex\s?5(?:[^a-z0-9]|$)|e245/i },
+  e5: { name: 'Geely E5', drive: 'bev', frames: 24, start: 5, direction: 1, color: 'silver', ext: 'webp', studio: '#ffffff',
+    match: /(?:^|[^a-z0-9])e\s?5(?:[^a-z0-9]|$)/i },
   ex2: { name: 'Geely EX2', drive: 'bev', frames: 24, start: 21, direction: -1, color: 'star-silver', ext: 'webp', studio: '#f5f3f1',
     match: /(?:^|[^a-z0-9])(?:ex\s?2|e2)(?:\s?max\+?)?(?:[^a-z0-9]|$)/i },
   starray_emi: { name: 'Geely Starray EM-i', drive: 'phev', frames: 24, start: 21, direction: -1, color: 'cloudveil-silver', ext: 'webp', studio: '#f9f3f0',
@@ -675,7 +677,7 @@ class Geely3DCard extends HTMLElement {
 }
 
 if (!customElements.get('geely-3d-card')) customElements.define('geely-3d-card', Geely3DCard);
-if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', Geely3DCard);
+if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', class extends Geely3DCard {});   // old name (v1.0-1.2)
 window.customCards = window.customCards || [];
 if (!window.customCards.find((c) => c.type === 'geely-3d-card'))
   window.customCards.push({ type: 'geely-3d-card', name: 'Geely 3D Card', description: 'Geely car status & controls with a drag-to-rotate 360° view', preview: false, documentationURL: 'https://github.com/1immortal/geely-3d-card' });

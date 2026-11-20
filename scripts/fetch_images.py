@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """Download the 360° frames of a Geely model/colour and convert them for geely-3d-card.
 
-The frames come from Geely's public websites (geely.com and geely.com.au) and are
+The frames come from Geely's public websites (geely.com, geely.com.au and Geely Europe) and are
 copyrighted by Geely. They are NOT distributed with this repository; this script
 fetches them for your own personal use only.
 
 Usage:
     python3 scripts/fetch_images.py --list
     python3 scripts/fetch_images.py --model ex5 --color silver
+    python3 scripts/fetch_images.py --model e5 --color silver
     python3 scripts/fetch_images.py --model ex2 --color star-silver [--variant 2]
     python3 scripts/fetch_images.py --model starray_emi --color cloudveil-silver [--remove-background]
 
 Options:
-    --model              ex5 (default) | ex2 | starray_emi
+    --model              ex5 (default) | e5 | ex2 | starray_emi
     --color              colour slug (see --list); default = the model's default colour
     --out DIR            output folder, default ./images/<model>/<color>
     --variant N          (ex2 / starray_emi) which trim's frame set to use, 1-based; default = first complete set
-    --remove-background  (ex2 / starray_emi) experimental: cut the car out of the studio background
+    --remove-background  (e5 / ex2 / starray_emi) experimental: cut the car out of the studio background
     --list               print the models and their colours
 
 Requires Python 3.8+, Pillow (pip install pillow); --remove-background also needs numpy and scipy.
@@ -39,6 +40,13 @@ MODELS = {
         "colors": ["silver", "grey", "green", "black", "white"], "default": "silver",
         "url": "https://www.geely.com/-/media/project/web-portal/models/ex5/model-colors/new/{c}/ex5-{c}---{n}.png",
         "frames": 24, "crop": (0, 235, 1500, 995),   # 1500x1000 source, empty space on top
+    },
+    "e5": {
+        "name": "Geely E5", "source": "geely.de (Geely Europe)", "transparent": False,
+        "colors": ["silver", "gray", "white", "black", "green"], "default": "silver",
+        # Geely Europe's 360° viewer (www.geely.de/models/geely-e5-electric-suv): 2100x1050 JPGs on white, 00 … 23
+        "url": "https://assets.geelyauto.eu/__frames__/exterior/geely-e5/lhd/23f/{c}/{n:02d}.jpg",
+        "frames": 24, "first": 0,
     },
     "ex2": {
         "name": "Geely EX2", "source": "geely.com.au", "transparent": False,
@@ -165,10 +173,11 @@ def main():
     color = (a.color or m["default"]).lower()
     out = a.out or os.path.join("images", a.model, color)
 
-    if a.model == "ex5":
+    if "url" in m:
         if color not in m["colors"]:
             sys.exit(f"Unknown colour '{color}' for {a.model}. Choose one of: {', '.join(m['colors'])}")
-        urls = [m["url"].format(c=color, n=n) for n in range(1, m["frames"] + 1)]
+        first = m.get("first", 1)
+        urls = [m["url"].format(c=color, n=n) for n in range(first, first + m["frames"])]
     else:
         sets = au_colour_sets(m["page"])
         if color not in sets:

@@ -1,17 +1,17 @@
 # Geely 3D Card
 
-A polished Lovelace card for **Geely** cars in Home Assistant – built for the **EX5**, and also supporting the **EX2 / E2 / EX2 Max** and the **Starray EM-i (PHEV)** – with a **drag-to-rotate 360° view** of the car, battery & range, fuel (PHEV), charging, tire pressures, climate, lock and quick controls. Full **English** and **Hebrew (RTL)** UI.
+A polished Lovelace card for **Geely** cars in Home Assistant – built for the **EX5**, and also supporting the **E5**, the **EX2 / E2 / EX2 Max** and the **Starray EM-i (PHEV)** – with a **drag-to-rotate 360° view** of the car, battery & range, fuel (PHEV), charging, tire pressures, climate, lock and quick controls. Full **English** and **Hebrew (RTL)** UI.
 
 It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKon/geely-connect)** integration by **[@YossiKon](https://github.com/YossiKon)** – all the car data and commands come from that integration (see [Credits](#credits)).
 
-> **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely, downloaded by you from [geely.com](https://www.geely.com/) / [geely.com.au](https://www.geely.com.au/), and are not part of this repository.
+> **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely, downloaded by you from [geely.com](https://www.geely.com/) / [geely.com.au](https://www.geely.com.au/) / [geely.de](https://www.geely.de/), and are not part of this repository.
 
 ![Geely 3D Card – English, desktop](docs/screenshot-en-desktop.png)
 
 ## Credits
 
 - **Integration:** [Geely Connect](https://github.com/YossiKon/geely-connect) (`geely_connect`) by [@YossiKon](https://github.com/YossiKon) – the unofficial Home Assistant integration that talks to Geely's cloud and creates every entity this card reads and controls. Issues with data or commands belong in [its issue tracker](https://github.com/YossiKon/geely-connect/issues). Per its source, its protocol mappings build in part on [nitaybz/geely-global-ha](https://github.com/nitaybz/geely-global-ha).
-- **Car images:** the 360° frames come from Geely's own websites – [geely.com](https://www.geely.com/en/models/ex5) (EX5) and [geely.com.au](https://www.geely.com.au/) (EX2, Starray EM-i). They are © Geely and are fetched locally by `scripts/fetch-images.sh`; they are not redistributed here.
+- **Car images:** the 360° frames come from Geely's own websites – [geely.com](https://www.geely.com/en/models/ex5) (EX5), Geely Europe's [geely.de](https://www.geely.de/models/geely-e5-electric-suv) (E5) and [geely.com.au](https://www.geely.com.au/) (EX2, Starray EM-i). They are © Geely and are fetched locally by `scripts/fetch-images.sh`; they are not redistributed here.
 - **Icons:** [Material Design Icons](https://pictogrammers.com/library/mdi/) via Home Assistant's `ha-icon`.
 
 ## Features
@@ -41,6 +41,7 @@ The integration is owner-tested on the EX5, the EX2 (sold as the E2 in some mark
 | Model (`model:`) | Drive | 360° view | Image source | Colors (`color:`) |
 |---|---|---|---|---|
 | Geely EX5 (`ex5`) | BEV | ✅ 24 frames, transparent | geely.com | `silver` (light gray), `grey`, `green`, `black`, `white` |
+| Geely E5 (`e5`) | BEV | ✅ 24 frames, white studio background | geely.de (Geely Europe) 360° viewer | `silver`, `gray`, `white`, `black`, `green` |
 | Geely EX2 / E2 / EX2 Max (`ex2`) | BEV | ✅ 24 frames, studio background | geely.com.au configurator | `moon-white`, `nebula-beige`, `star-silver`, `aurora-green`, `nova-pink`, `comet-grey` |
 | Geely Starray EM-i (`starray_emi`) | PHEV | ✅ 24 frames, studio background | geely.com.au configurator | `alpine-white`, `polar-black`, `jungle-green`, `glacier-blue`, `volcanic-grey`, `cloudveil-silver` |
 | Any other Geely (`generic`) | auto (fuel tile appears if fuel entities exist) | ➖ single image via `car_image`, or your own frames via `image_base` + `frames`; otherwise a car icon | – | – |
@@ -48,6 +49,7 @@ The integration is owner-tested on the EX5, the EX2 (sold as the E2 in some mark
 Notes on partial support:
 
 - **EX2 and Starray EM-i** frames come from Geely Australia's configurator and are opaque JPGs on a light studio background (no transparent set is published). The card draws them on a matching rounded panel. `--remove-background` in the fetch script is an experimental cut-out.
+- **E5** is the name the EX5 is sold under in Europe and Israel (in China: Galaxy E5). Its frames come from Geely Europe's 360° viewer and show the "GEELY E5" badge; they are opaque JPGs on a white studio background, drawn on a white panel. If your car shows up as an EX5 in the integration, set `model: e5` to use these images. Colors: `silver` (Moonlight Silver), `gray` (Frost Grey), `white` (Snow White), `black` (Carbon Black), `green` (Turquoise Green). The E5 profile has only been checked with simulated data.
 - **EX2 Max / E2** use the EX2 images – no separate 360° sets are published for them.
 - The **Starray** on geely.com's global site is a different, petrol-only car, so its 360° set is not used for the Starray EM-i.
 - Cars on the integration's experimental **new Geely EM (Zeekr) platform** get fewer entities. The card simply hides what is missing.
@@ -90,6 +92,7 @@ The frames are © Geely, so they are not distributed here. The included script d
 ```bash
 scripts/fetch-images.sh --list                                   # models and their colors
 scripts/fetch-images.sh --model ex5 --color silver               # -> ./images/ex5/silver/1.webp … 24.webp
+scripts/fetch-images.sh --model e5 --color silver                # -> ./images/e5/silver/1.webp … 24.webp
 scripts/fetch-images.sh --model ex2 --color star-silver          # --variant N picks another trim's set
 scripts/fetch-images.sh --model starray_emi --color glacier-blue # --remove-background (experimental)
 # or directly: python3 scripts/fetch_images.py … (needs Pillow)
@@ -97,7 +100,7 @@ scripts/fetch-images.sh --model starray_emi --color glacier-blue # --remove-back
 
 Copy the folder to Home Assistant as **`/config/www/geely-ex5/<model>/<color>/`** (File editor, Samba or SSH add-on), so the files are served at `/local/geely-ex5/<model>/<color>/1.webp`. That is the card's default location for the detected `model` and `color`. If you store them anywhere else, set **`image_base`**.
 
-EX5 frames: 1 = front, 7 = left side, 13 = rear, 19 = right side. The Geely Australia sets run the other way, and the profile handles that (`rotate_direction`).
+EX5 and E5 frames: 1 = front, 7 = left side, 13 = rear, 19 = right side. The Geely Australia sets run the other way, and the profile handles that (`rotate_direction`).
 
 ## Configuration
 
@@ -107,7 +110,7 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 |---|---|---|---|
 | `type` | string | **required** | `custom:geely-3d-card` |
 | `entity_prefix` | string | **required** | Shared prefix of the car's entities, e.g. `my_geely_ex5_1234` |
-| `model` | string | `auto` | `auto`, `ex5`, `ex2`, `starray_emi` or `generic`. Auto-detection reads the car's device (model / name) in the device registry, then the prefix |
+| `model` | string | `auto` | `auto`, `ex5`, `e5`, `ex2`, `starray_emi` or `generic`. Auto-detection reads the car's device (model / name) in the device registry, then the prefix |
 | `language` | string | `auto` | `auto` (Hebrew if your HA language is Hebrew, otherwise English), `en` or `he` |
 | `title` | string | model name | Card title |
 | `climate_entity` | string | auto-detected | Pre-conditioning climate entity. Auto-detection looks for `climate.<prefix>_climate`, then any climate entity whose name matches the end of the prefix. Set it if detection picks nothing or the wrong entity |
@@ -129,7 +132,7 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
 language: auto
-model: auto        # or ex5 / ex2 / starray_emi
+model: auto        # or ex5 / e5 / ex2 / starray_emi
 color: silver
 ```
 
@@ -157,13 +160,17 @@ EX5 – Hebrew (RTL), desktop:
 
 ![](docs/screenshot-he-desktop.png)
 
+| E5 – English, dark, charging |
+|---|
+| ![](docs/screenshot-e5-en-desktop.png) |
+
 | EX2 – charging, trunk open, details | Starray EM-i (PHEV) – fuel tile | Starray EM-i – Hebrew, light |
 |---|---|---|
 | ![](docs/screenshot-ex2-en-desktop.png) | ![](docs/screenshot-starray-emi-en-desktop.png) | ![](docs/screenshot-starray-emi-he-phone-light.png) |
 
 ## עברית
 
-כרטיס Lovelace לרכבי Geely (EX5, ‏EX2/E2 ו-Starray EM-i) עם תצוגת 360° בגרירה, סוללה וטווח, דלק (בפלאג-אין), טעינה, לחץ צמיגים, טמפרטורה, נעילה ובקרות מהירות. הממשק זמין בעברית (מימין לשמאל) ובאנגלית.
+כרטיס Lovelace לרכבי Geely (EX5, ‏E5, ‏EX2/E2 ו-Starray EM-i) עם תצוגת 360° בגרירה, סוללה וטווח, דלק (בפלאג-אין), טעינה, לחץ צמיגים, טמפרטורה, נעילה ובקרות מהירות. הממשק זמין בעברית (מימין לשמאל) ובאנגלית.
 
 - הנתונים מגיעים מהאינטגרציה [Geely Connect](https://github.com/YossiKon/geely-connect) של [@YossiKon](https://github.com/YossiKon). חובה להגדיר `entity_prefix`.
 - השפה נבחרת אוטומטית לפי שפת Home Assistant, או בכפייה עם `language: he`.
@@ -179,7 +186,7 @@ language: he
 
 ## Disclaimer
 
-Unofficial project, not affiliated with or endorsed by Geely. "Geely", "EX5", "EX2" and "Starray" are trademarks of their respective owners. Car images are © Geely and are fetched by the user. They are not part of this project or its license.
+Unofficial project, not affiliated with or endorsed by Geely. "Geely", "EX5", "E5", "EX2" and "Starray" are trademarks of their respective owners. Car images are © Geely and are fetched by the user. They are not part of this project or its license.
 
 ## License
 

@@ -2,6 +2,7 @@
 # Download + convert Geely 360° frames for the card.
 #   scripts/fetch-images.sh --list
 #   scripts/fetch-images.sh --model ex5 --color silver
+#   scripts/fetch-images.sh --model e5 --color silver
 #   scripts/fetch-images.sh --model ex2 --color star-silver
 #   scripts/fetch-images.sh --model starray_emi --color cloudveil-silver
 # Needs python3 with Pillow (installed into a local .venv automatically if missing).
