@@ -1,10 +1,10 @@
 /*!
- * Geely EX5 Card - a Home Assistant Lovelace card for the Geely EX5
+ * Geely 3D Card - a Home Assistant Lovelace card for Geely cars
  * (entities from the Geely Connect custom integration).
  * Vanilla web component, no build step, no external dependencies.
- * https://github.com/1immortal/geely-ex5-card - MIT License
+ * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.2.0';
+const GEC_VERSION = '1.3.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -47,7 +47,7 @@ const GEC_I18N = {
     t_sent: 'Sent to car', t_unlock: 'Unlock command sent', t_lock: 'Lock command sent', t_clim_on: 'Pre-conditioning on',
     t_clim_off: 'Pre-conditioning off', t_start: 'Start charging sent', t_stop: 'Stop charging sent',
     t_find: 'The car will flash and beep', t_refresh: 'Refreshing data…', t_updated: 'Updated', t_err: 'Error: {m}', t_failed: 'command failed',
-    no_prefix: 'geely-ex5-card: "entity_prefix" is required (e.g. my_geely_ex5_1234)',
+    no_prefix: 'geely-3d-card: "entity_prefix" is required (e.g. my_geely_ex5_1234)',
     fuel: 'Fuel', fuel_range: 'Fuel range', combined: 'Total range: {n} km', ev_range: 'Electric range', litres: 'L',
     fuel_flap: 'Fuel flap open', frunk: 'Front trunk', trunk_btn: 'Trunk', unlock_btn: 'Unlock',
     c_unlock_frunk: 'Open the front trunk?', c_unlock_trunk: 'Unlock the trunk?',
@@ -79,7 +79,7 @@ const GEC_I18N = {
     t_sent: 'נשלח לרכב', t_unlock: 'פקודת פתיחה נשלחה', t_lock: 'פקודת נעילה נשלחה', t_clim_on: 'מיזוג מראש הופעל',
     t_clim_off: 'מיזוג מראש כובה', t_start: 'התחלת טעינה נשלחה', t_stop: 'עצירת טעינה נשלחה',
     t_find: 'הרכב יצפור ויהבהב', t_refresh: 'מרענן נתונים…', t_updated: 'עודכן', t_err: 'שגיאה: {m}', t_failed: 'הפקודה נכשלה',
-    no_prefix: 'geely-ex5-card: חובה להגדיר "entity_prefix"',
+    no_prefix: 'geely-3d-card: חובה להגדיר "entity_prefix"',
     fuel: 'דלק', fuel_range: 'טווח דלק', combined: 'טווח כולל: {n} ק״מ', ev_range: 'טווח חשמלי', litres: 'ל׳',
     fuel_flap: 'מכסה הדלק פתוח', frunk: 'תא מטען קדמי', trunk_btn: 'תא מטען', unlock_btn: 'פתח',
     c_unlock_frunk: 'לפתוח את תא המטען הקדמי?', c_unlock_trunk: 'לפתוח את נעילת תא המטען?',
@@ -88,7 +88,7 @@ const GEC_I18N = {
   },
 };
 
-class GeelyEx5Card extends HTMLElement {
+class Geely3DCard extends HTMLElement {
   static getStubConfig(hass) {
     let prefix = 'my_geely_ex5_xxxx';
     if (hass) {
@@ -674,8 +674,9 @@ class GeelyEx5Card extends HTMLElement {
   }
 }
 
-if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', GeelyEx5Card);
+if (!customElements.get('geely-3d-card')) customElements.define('geely-3d-card', Geely3DCard);
+if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', Geely3DCard);
 window.customCards = window.customCards || [];
-if (!window.customCards.find((c) => c.type === 'geely-ex5-card'))
-  window.customCards.push({ type: 'geely-ex5-card', name: 'Geely EX5 Card', description: 'Geely EX5 status & controls with a drag-to-rotate 360° view', preview: false, documentationURL: 'https://github.com/1immortal/geely-ex5-card' });
-console.info(`%c GEELY-EX5-CARD %c ${GEC_VERSION} `, 'background:#4fb3ff;color:#10141d;font-weight:700', 'background:#10141d;color:#e8eef8');
+if (!window.customCards.find((c) => c.type === 'geely-3d-card'))
+  window.customCards.push({ type: 'geely-3d-card', name: 'Geely 3D Card', description: 'Geely car status & controls with a drag-to-rotate 360° view', preview: false, documentationURL: 'https://github.com/1immortal/geely-3d-card' });
+console.info(`%c GEELY-3D-CARD %c ${GEC_VERSION} `, 'background:#4fb3ff;color:#10141d;font-weight:700', 'background:#10141d;color:#e8eef8');

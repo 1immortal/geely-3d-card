@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download the 360° frames of a Geely model/colour and convert them for geely-ex5-card.
+"""Download the 360° frames of a Geely model/colour and convert them for geely-3d-card.
 
 The frames come from Geely's public websites (geely.com and geely.com.au) and are
 copyrighted by Geely. They are NOT distributed with this repository; this script
@@ -30,7 +30,7 @@ import re
 import sys
 import urllib.request
 
-UA = {"User-Agent": "Mozilla/5.0 (geely-ex5-card image fetcher)"}
+UA = {"User-Agent": "Mozilla/5.0 (geely-3d-card image fetcher)"}
 OUT_W, OUT_H = 900, 456
 
 MODELS = {

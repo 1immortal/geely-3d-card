@@ -1,4 +1,4 @@
-# Geely EX5 Card
+# Geely 3D Card
 
 A polished Lovelace card for **Geely** cars in Home Assistant – built for the **EX5**, and also supporting the **EX2 / E2 / EX2 Max** and the **Starray EM-i (PHEV)** – with a **drag-to-rotate 360° view** of the car, battery & range, fuel (PHEV), charging, tire pressures, climate, lock and quick controls. Full **English** and **Hebrew (RTL)** UI.
 
@@ -6,7 +6,7 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
 
 > **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely, downloaded by you from [geely.com](https://www.geely.com/) / [geely.com.au](https://www.geely.com.au/), and are not part of this repository.
 
-![Geely EX5 Card – English, desktop](docs/screenshot-en-desktop.png)
+![Geely 3D Card – English, desktop](docs/screenshot-en-desktop.png)
 
 ## Credits
 
@@ -63,15 +63,17 @@ Notes on partial support:
 
 ### HACS (custom repository)
 
-1. HACS → ⋮ → **Custom repositories** → add `https://github.com/1immortal/geely-ex5-card`, category **Dashboard**.
-2. Install **Geely EX5 Card**, then reload the browser.
-3. HACS registers the resource `/hacsfiles/geely-ex5-card/geely-ex5-card.js` automatically.
+1. HACS → ⋮ → **Custom repositories** → add `https://github.com/1immortal/geely-3d-card`, category **Dashboard**.
+2. Install **Geely 3D Card**, then reload the browser.
+3. HACS registers the resource `/hacsfiles/geely-3d-card/geely-3d-card.js` automatically.
 
 ### Manual
 
-1. Copy `geely-ex5-card.js` to `/config/www/geely-ex5-card.js`.
-2. Settings → Dashboards → ⋮ → **Resources** → add `/local/geely-ex5-card.js` as **JavaScript module**.
+1. Copy `geely-3d-card.js` to `/config/www/geely-3d-card.js`.
+2. Settings → Dashboards → ⋮ → **Resources** → add `/local/geely-3d-card.js` as **JavaScript module**.
 3. Reload the browser.
+
+The previous type `custom:geely-ex5-card` is still registered as a backward-compatible alias, so existing dashboards keep working after the upgrade.
 
 ## Car images
 
@@ -95,7 +97,7 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `type` | string | **required** | `custom:geely-ex5-card` |
+| `type` | string | **required** | `custom:geely-3d-card` |
 | `entity_prefix` | string | **required** | Shared prefix of the car's entities, e.g. `my_geely_ex5_1234` |
 | `model` | string | `auto` | `auto`, `ex5`, `ex2`, `starray_emi` or `generic`. Auto-detection reads the car's device (model / name) in the device registry, then the prefix |
 | `language` | string | `auto` | `auto` (Hebrew if your HA language is Hebrew, otherwise English), `en` or `he` |
@@ -116,7 +118,7 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 ### Example
 
 ```yaml
-type: custom:geely-ex5-card
+type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
 language: auto
 model: auto        # or ex5 / ex2 / starray_emi
@@ -162,7 +164,7 @@ EX5 – Hebrew (RTL), desktop:
 - כרטיס לא רשמי, ללא קשר ל-Geely.
 
 ```yaml
-type: custom:geely-ex5-card
+type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
 language: he
 ```
