@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.7.2';
+const GEC_VERSION = '1.7.3';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -51,6 +51,8 @@ const GEC_I18N = {
     pc_note: 'The car turns the climate off on its own after its built-in time.',
     c_precond: "Start the car's climate remotely?",
     t_pc_sched: 'Pre-conditioning scheduled', t_pc_json: 'Settings are too long to save',
+    pc_sending: 'Sending {n}/{t}…', pc_some_failed: 'Some commands failed: {items}',
+    pc_hour: 'Hour', pc_minute: 'Minute',
     charger_ctrl_1: 'Charger', charger_ctrl_2: 'control',
     odometer: 'Odometer', to_service: 'To service', consumption: 'Consumption', last_trip: 'Last trip', kwh100: 'kWh/100 km',
     seat_heat_driver: 'Driver seat heating', seat_heat_passenger: 'Passenger seat heating',
@@ -97,6 +99,8 @@ const GEC_I18N = {
     pc_note: 'הרכב מכבה את המיזוג מעצמו אחרי הזמן המובנה.',
     c_precond: 'להפעיל את מיזוג הרכב מרחוק?',
     t_pc_sched: 'מיזוג מראש תוזמן', t_pc_json: 'ההגדרות ארוכות מדי לשמירה',
+    pc_sending: 'שולח {n}/{t}…', pc_some_failed: 'חלק מהפקודות נכשלו: {items}',
+    pc_hour: 'שעה', pc_minute: 'דקה',
     charger_ctrl_1: 'שליטת', charger_ctrl_2: 'עמדת טעינה',
     odometer: 'מד מרחק', to_service: 'לטיפול', consumption: 'צריכה', last_trip: 'נסיעה אחרונה', kwh100: 'קוט״ש/100',
     seat_heat_driver: 'חימום מושב נהג', seat_heat_passenger: 'חימום מושב נוסע',
@@ -193,6 +197,21 @@ class Geely3DCard extends HTMLElement {
         precondEntities.push(id);
       }
     }
+    let commandDelay = 2;
+    if (c.command_delay != null && String(c.command_delay).trim() !== '') {
+      const n = Number(c.command_delay);
+      if (!isFinite(n) || n < 0) {
+        throw new Error('geely-3d-card: "command_delay" must be a non-negative number of seconds');
+      }
+      commandDelay = n;
+    }
+    let timeFormat = null;
+    if (c.time_format != null && String(c.time_format).trim() !== '') {
+      timeFormat = String(c.time_format).trim().toLowerCase();
+      if (timeFormat !== '24h' && timeFormat !== '12h') {
+        throw new Error('geely-3d-card: "time_format" must be 24h or 12h');
+      }
+    }
     this._raw = c;
     this._cfg = {
       title: c.title || null,
@@ -217,6 +236,8 @@ class Geely3DCard extends HTMLElement {
       precond_entities: precondEntities,
       map_marker: mapMarker,
       map_marker_frame: mapMarkerFrame,
+      command_delay: commandDelay,
+      time_format: timeFormat,
     };
     this._sig = null;
     this._prof = null;
@@ -559,15 +580,23 @@ class Geely3DCard extends HTMLElement {
   .pc-who { font-size:11.5px; color:var(--zc-mut); min-width:3.5em; }
   .pc-segrow { display:flex; align-items:center; gap:8px; }
   .pc-note { font-size:11.5px; color:var(--zc-mut); line-height:1.35; }
-  .pc-timewrap { display:flex; align-items:center; gap:8px; flex:1 1 auto; }
-  .pc-timewrap input[type=time] { border:none; border-radius:10px; background:var(--zc-pan2); color:inherit;
-    font:600 14px var(--zc-font); padding:8px 10px; min-width:0; flex:1 1 110px; }
+  .pc-timewrap { display:flex; align-items:center; gap:6px; flex:1 1 auto; justify-content:flex-end; }
+  .pc-time-sel { border:none; border-radius:10px; background:var(--zc-pan2); color:inherit;
+    font:600 14px var(--zc-font); padding:8px 6px; min-width:3.6em; text-align:center; }
+  .pc-time-colon { font:700 16px var(--zc-font); opacity:.7; }
+  .pc-time-text { font:600 13px var(--zc-font); color:var(--zc-mut); }
+  .pc-status { font-size:12.5px; padding:0 14px 8px; color:var(--zc-mut); }
+  .pc-status.ok { color:var(--zc-teal); }
+  .pc-status.err { color:var(--zc-red); }
   .pc-foot { display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px 14px; }
   .pc-btn { flex:1 1 30%; min-width:96px; text-align:center; border:none; border-radius:10px; padding:10px 8px;
     font:600 13px var(--zc-font); cursor:pointer; color:inherit; background:var(--zc-pan2); }
   .pc-btn.now { background:var(--zc-blue); color:#fff; }
   .pc-btn.stop { background:color-mix(in srgb, var(--zc-red) 18%, transparent); color:var(--zc-red); }
-  .pc-btn[disabled], .pc-btn.hidden { display:none; }
+  .pc-btn.hidden { display:none; }
+  .pc-btn[disabled] { opacity:.45; pointer-events:none; cursor:default; }
+  .pc-sheet.pc-busy .pc-chip, .pc-sheet.pc-busy .pc-tog, .pc-sheet.pc-busy .seg button,
+  .pc-sheet.pc-busy .pc-step button, .pc-sheet.pc-busy .pc-time-sel { opacity:.45; pointer-events:none; }
   @container (max-width: 420px) {
     .pc-temp { font-size:24px; }
     .pc-btn { font-size:12.5px; padding:9px 6px; }
@@ -614,6 +643,7 @@ class Geely3DCard extends HTMLElement {
     <div class="pc-sheet" role="dialog" aria-modal="true">
       <div class="pc-head"><h2 class="pc-title"></h2><button type="button" class="map-close pc-close" data-act="pc_close" aria-label="">×</button></div>
       <div class="pc-body"></div>
+      <div class="pc-status" hidden></div>
       <div class="pc-foot"></div>
     </div>
   </div>
@@ -627,7 +657,8 @@ class Geely3DCard extends HTMLElement {
       hint: $('.hint'), loading: $('.loading'), yes: $('.modal .yes'), no: $('.modal .no'),
       mmap: $('.map-modal'), mapTitle: $('.map-title'), mapClose: $('.map-close'), mapCanvas: $('.map-canvas'),
       mapZone: $('.map-zone'), mapUpdated: $('.map-updated'), mapNav: $('.map-btn.nav'), mapWaze: $('.map-btn.waze'), mapHonk: $('.map-btn.honk'),
-      pcmodal: $('.pc-modal'), pcTitle: $('.pc-title'), pcClose: $('.pc-close'), pcBody: $('.pc-body'), pcFoot: $('.pc-foot') };
+      pcmodal: $('.pc-modal'), pcTitle: $('.pc-title'), pcClose: $('.pc-close'), pcBody: $('.pc-body'),
+      pcStatus: $('.pc-status'), pcFoot: $('.pc-foot') };
     this._applyStatic();
     this._imgs = [...root.querySelectorAll('.frames img')];
     let loaded = 0;
@@ -1132,11 +1163,7 @@ class Geely3DCard extends HTMLElement {
       if (domain === 'switch') st.extra[id] = this._on(id);
       else st.extra[id] = this._v(id) || this._pcOffOption(id);
     }
-    const timeEnt = this._cfg.precond_schedule;
-    const ts = this._s(timeEnt);
-    const raw = ts && (this._v(timeEnt) || (ts.attributes && ts.attributes.timestamp) || '');
-    const m = String(raw).match(/(\d{1,2}):(\d{2})/);
-    if (m) st.time = `${m[1].padStart(2, '0')}:${m[2]}`;
+    st.time = this._pcDefaultTime();
     if (this._on(this._cfg.precond_enabled)) {
       const settings = this._v(this._cfg.precond_settings);
       if (settings) {
@@ -1249,13 +1276,56 @@ class Geely3DCard extends HTMLElement {
     }
     this._paintPrecond();
   }
-  _pcReadTime() {
-    const inp = this._el && this._el.pcBody && this._el.pcBody.querySelector('input[type=time]');
-    if (inp && inp.value) {
-      const m = String(inp.value).match(/(\d{1,2}):(\d{2})/);
-      if (m) this._pc.time = `${m[1].padStart(2, '0')}:${m[2]}`;
+  _use24h() {
+    const cfg = this._cfg && this._cfg.time_format;
+    if (cfg === '24h') return true;
+    if (cfg === '12h') return false;
+    if (this._lang === 'he') return true;
+    const tf = String((this._hass && this._hass.locale && this._hass.locale.time_format) || '').toLowerCase();
+    if (tf === '24' || tf === '24h') return true;
+    if (tf === 'am_pm' || tf === '12' || tf === '12h') return false;
+    try {
+      const hc = new Intl.DateTimeFormat(this._locale, { hour: 'numeric' }).resolvedOptions().hourCycle;
+      return hc === 'h23' || hc === 'h24';
+    } catch (e) { return this._lang === 'he'; }
+  }
+  _fmtClock(hhmm) {
+    const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    const h = Math.min(23, Math.max(0, parseInt(m[1], 10)));
+    const min = Math.min(59, Math.max(0, parseInt(m[2], 10)));
+    const pad = (n) => String(n).padStart(2, '0');
+    if (this._use24h()) return `${pad(h)}:${pad(min)}`;
+    const h12 = h % 12 || 12;
+    return `${h12}:${pad(min)} ${h < 12 ? 'AM' : 'PM'}`;
+  }
+  _pcSnapTime(hhmm) {
+    const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) return '07:30';
+    let h = Math.min(23, Math.max(0, parseInt(m[1], 10)));
+    let min = Math.min(59, Math.max(0, parseInt(m[2], 10)));
+    min = Math.round(min / 5) * 5;
+    if (min >= 60) { min = 0; h = (h + 1) % 24; }
+    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+  _pcDefaultTime() {
+    if (this._on(this._cfg.precond_enabled)) {
+      const raw = this._v(this._cfg.precond_schedule) || '';
+      const m = String(raw).match(/(\d{1,2}):(\d{2})/);
+      if (m) return this._pcSnapTime(`${m[1].padStart(2, '0')}:${m[2]}`);
     }
-    return (this._pc && this._pc.time) || '07:00';
+    try {
+      const now = new Date();
+      const h = (now.getHours() + 2) % 24;
+      return `${String(h).padStart(2, '0')}:00`;
+    } catch (e) { return '07:30'; }
+  }
+  _pcReadTime() {
+    const body = this._el && this._el.pcBody;
+    const hh = body && body.querySelector('select[data-pc="hh"]');
+    const mm = body && body.querySelector('select[data-pc="mm"]');
+    if (hh && mm) this._pc.time = this._pcSnapTime(`${hh.value}:${mm.value}`);
+    return (this._pc && this._pc.time) || this._pcDefaultTime();
   }
   _openPrecond() {
     const clim = this._climateId();
@@ -1335,59 +1405,202 @@ class Geely3DCard extends HTMLElement {
       ${tog('wv', ids.wv, this._t('pc_winvent'), 'mdi:window-open')}
       ${extraRows}
       <div class="pc-note">${esc(this._t('pc_note'))}</div>
-      ${canAt ? `<div class="pc-row"><span class="lab">${esc(this._t('pc_at'))}</span>
-        <span class="pc-timewrap"><input type="time" value="${esc(st.time)}" aria-label="${esc(this._t('pc_at'))}"></span></div>` : ''}`;
+      ${canAt ? `<div class="pc-row"><span class="lab">${esc(this._t('pc_at'))}${this._fmtClock(st.time) ? ` <span class="pc-time-text">${esc(this._fmtClock(st.time))}</span>` : ''}</span>
+        <span class="pc-timewrap">${this._pcTimeSelects(st.time)}</span></div>` : ''}`;
     const clim = this._s(this._climateId());
     const climOn = !!(clim && clim.state && clim.state !== 'off' && !GEC_BAD.includes(String(clim.state).toLowerCase()));
-    const foot = [`<button type="button" class="pc-btn now" data-act="pc_now">${esc(this._t('pc_now'))}</button>`];
-    if (canAt) foot.push(`<button type="button" class="pc-btn" data-act="pc_at">${esc(this._t('pc_at'))}</button>`);
-    if (climOn) foot.push(`<button type="button" class="pc-btn stop" data-act="pc_stop">${esc(this._t('pc_stop'))}</button>`);
+    const busy = !!this._pcBusy;
+    const dis = busy ? 'disabled' : '';
+    const foot = [`<button type="button" class="pc-btn now" data-act="pc_now" ${dis}>${esc(this._t('pc_now'))}</button>`];
+    if (canAt) foot.push(`<button type="button" class="pc-btn" data-act="pc_at" ${dis}>${esc(this._t('pc_at'))}</button>`);
+    if (climOn) foot.push(`<button type="button" class="pc-btn stop" data-act="pc_stop" ${dis}>${esc(this._t('pc_stop'))}</button>`);
     this._el.pcFoot.innerHTML = foot.join('');
-    const inp = this._el.pcBody.querySelector('input[type=time]');
-    if (inp) {
-      const sync = () => this._pcReadTime();
-      inp.addEventListener('change', sync);
-      inp.addEventListener('input', sync);
+    const sheet = this._el.pcmodal && this._el.pcmodal.querySelector('.pc-sheet');
+    if (sheet) sheet.classList.toggle('pc-busy', busy);
+    if (this._el.pcStatus && this._pcStatus) {
+      this._el.pcStatus.hidden = false;
+      this._el.pcStatus.className = 'pc-status' + (this._pcStatus.kind ? ` ${this._pcStatus.kind}` : '');
+      this._el.pcStatus.textContent = this._pcStatus.text || '';
     }
+    this._el.pcBody.querySelectorAll('select[data-pc]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        this._pcReadTime();
+        const lab = this._el.pcBody.querySelector('.pc-time-text');
+        if (lab) lab.textContent = this._fmtClock(this._pc.time);
+      });
+    });
+  }
+  _pcTimeSelects(hhmm) {
+    const t = this._pcSnapTime(hhmm);
+    const [h, m] = t.split(':');
+    const esc = (x) => this._esc(x);
+    const hours = [];
+    for (let i = 0; i < 24; i++) {
+      const v = String(i).padStart(2, '0');
+      hours.push(`<option value="${v}" ${v === h ? 'selected' : ''}>${v}</option>`);
+    }
+    const mins = [];
+    for (let i = 0; i < 60; i += 5) {
+      const v = String(i).padStart(2, '0');
+      mins.push(`<option value="${v}" ${v === m ? 'selected' : ''}>${v}</option>`);
+    }
+    return `<select class="pc-time-sel" data-pc="hh" aria-label="${esc(this._t('pc_hour'))}">${hours.join('')}</select>`
+      + `<span class="pc-time-colon">:</span>`
+      + `<select class="pc-time-sel" data-pc="mm" aria-label="${esc(this._t('pc_minute'))}">${mins.join('')}</select>`;
+  }
+  _pcEntityLabel(id, fallbackKey) {
+    const s = this._s(id);
+    const name = s && s.attributes && s.attributes.friendly_name;
+    if (name) return String(name);
+    return fallbackKey ? this._t(fallbackKey) : (id || this._t('pc_title'));
+  }
+  _pcSwitchSkip(id, wantOn) {
+    const s = this._s(id);
+    const st = s ? String(s.state).toLowerCase() : '';
+    if (!s || GEC_BAD.includes(st)) return !wantOn;
+    return wantOn ? st === 'on' : st === 'off';
+  }
+  _pcSelectSkip(id, want) {
+    const cur = this._v(id);
+    return cur != null && String(cur) === String(want);
   }
   _pcCalls() {
     const st = this._pc, ids = this._pcIds(), clim = this._climateId(), out = [];
-    out.push(['climate', 'set_temperature', { entity_id: clim, temperature: st.t, hvac_mode: 'heat_cool' }]);
-    if (st.p) out.push(['climate', 'set_preset_mode', { entity_id: clim, preset_mode: st.p }]);
+    const labels = { df: 'pc_defrost', wh: 'pc_wheel', wv: 'pc_winvent', shd: 'pc_seat_heat', shp: 'pc_seat_heat', svd: 'pc_seat_vent', svp: 'pc_seat_vent' };
+    out.push(['climate', 'set_temperature', { entity_id: clim, temperature: st.t, hvac_mode: 'heat_cool' }, this._t('pc_temp')]);
+    if (st.p) {
+      const s = this._s(clim);
+      const cur = s && s.attributes && s.attributes.preset_mode;
+      if (String(cur || '') !== String(st.p)) {
+        out.push(['climate', 'set_preset_mode', { entity_id: clim, preset_mode: st.p }, st.p]);
+      }
+    }
     for (const k of ['df', 'wh', 'wv']) {
-      if (!ids[k]) continue;
-      out.push(['switch', st[k] ? 'turn_on' : 'turn_off', { entity_id: ids[k] }]);
+      if (!ids[k] || this._pcSwitchSkip(ids[k], !!st[k])) continue;
+      out.push(['switch', st[k] ? 'turn_on' : 'turn_off', { entity_id: ids[k] }, this._pcEntityLabel(ids[k], labels[k])]);
     }
     for (const k of ['shd', 'shp', 'svd', 'svp']) {
-      if (!ids[k] || st[k] == null) continue;
-      out.push(['select', 'select_option', { entity_id: ids[k], option: st[k] }]);
+      if (!ids[k] || st[k] == null || this._pcSelectSkip(ids[k], st[k])) continue;
+      out.push(['select', 'select_option', { entity_id: ids[k], option: st[k] }, this._pcEntityLabel(ids[k], labels[k])]);
     }
     for (const id of ids.extras) {
       const domain = id.split('.')[0], v = st.extra[id];
-      if (domain === 'switch') out.push(['switch', v ? 'turn_on' : 'turn_off', { entity_id: id }]);
-      else if (v != null) out.push(['select', 'select_option', { entity_id: id, option: v }]);
+      const lab = this._pcEntityLabel(id);
+      if (domain === 'switch') {
+        if (this._pcSwitchSkip(id, !!v)) continue;
+        out.push(['switch', v ? 'turn_on' : 'turn_off', { entity_id: id }, lab]);
+      } else if (v != null) {
+        if (this._pcSelectSkip(id, v)) continue;
+        out.push(['select', 'select_option', { entity_id: id, option: v }, lab]);
+      }
     }
     return out;
   }
   _pcStopCalls() {
     const ids = this._pcIds(), clim = this._climateId(), out = [];
-    out.push(['climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: 'off' }]);
-    for (const k of ['df', 'wh', 'wv']) if (ids[k]) out.push(['switch', 'turn_off', { entity_id: ids[k] }]);
-    for (const k of ['shd', 'shp', 'svd', 'svp']) if (ids[k]) out.push(['select', 'select_option', { entity_id: ids[k], option: this._pcOffOption(ids[k]) }]);
+    const climS = this._s(clim);
+    const climOn = !!(climS && climS.state && climS.state !== 'off' && !GEC_BAD.includes(String(climS.state).toLowerCase()));
+    if (climOn) out.push(['climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: 'off' }, this._t('pc_stop')]);
+    const labels = { df: 'pc_defrost', wh: 'pc_wheel', wv: 'pc_winvent', shd: 'pc_seat_heat', shp: 'pc_seat_heat', svd: 'pc_seat_vent', svp: 'pc_seat_vent' };
+    for (const k of ['df', 'wh', 'wv']) {
+      if (ids[k] && this._on(ids[k])) out.push(['switch', 'turn_off', { entity_id: ids[k] }, this._pcEntityLabel(ids[k], labels[k])]);
+    }
+    for (const k of ['shd', 'shp', 'svd', 'svp']) {
+      if (!ids[k]) continue;
+      const off = this._pcOffOption(ids[k]);
+      const cur = this._v(ids[k]);
+      if (cur != null && String(cur) !== String(off)) {
+        out.push(['select', 'select_option', { entity_id: ids[k], option: off }, this._pcEntityLabel(ids[k], labels[k])]);
+      }
+    }
     for (const id of ids.extras) {
       const domain = id.split('.')[0];
-      if (domain === 'switch') out.push(['switch', 'turn_off', { entity_id: id }]);
-      else out.push(['select', 'select_option', { entity_id: id, option: this._pcOffOption(id) }]);
+      if (domain === 'switch') {
+        if (this._on(id)) out.push(['switch', 'turn_off', { entity_id: id }, this._pcEntityLabel(id)]);
+      } else {
+        const off = this._pcOffOption(id);
+        const cur = this._v(id);
+        if (cur != null && String(cur) !== String(off)) {
+          out.push(['select', 'select_option', { entity_id: id, option: off }, this._pcEntityLabel(id)]);
+        }
+      }
     }
     return out;
   }
-  _pcRun(calls, msgKey) {
-    const run = (i) => {
-      if (i >= calls.length) { this._toast(this._t(msgKey)); this._closePrecond(); return; }
-      const [d, s, data] = calls[i];
-      this._hass.callService(d, s, data).then(() => run(i + 1), (err) => this._toast(this._t('t_err', { m: (err && err.message) || this._t('t_failed') })));
-    };
-    run(0);
+  _pcIsBusyErr(err) {
+    const m = String((err && (err.message || err.error || err)) || '').toLowerCase();
+    return m.includes('not yet been executed') || m.includes('send the command later');
+  }
+  _pcDelay(ms) {
+    if (!ms || ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  _pcCallService(domain, service, data) {
+    const fn = this._hass.callService.bind(this._hass);
+    try { return fn(domain, service, data, undefined, false); }
+    catch (e) { return Promise.reject(e); }
+  }
+  async _pcCallOne(call) {
+    const [d, s, data, label] = call;
+    const zero = !this._cfg.command_delay;
+    const backoffs = zero ? [0, 0, 0] : [3000, 6000, 10000];
+    let lastErr = null;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      try {
+        await this._pcCallService(d, s, data);
+        return { ok: true };
+      } catch (err) {
+        lastErr = err;
+        if (!this._pcIsBusyErr(err) || attempt === 3) break;
+        await this._pcDelay(backoffs[attempt]);
+      }
+    }
+    return { ok: false, err: lastErr, label: label || s };
+  }
+  _pcSetProgress(n, total) {
+    const el = this._el && this._el.pcStatus;
+    if (!el) return;
+    el.hidden = false;
+    el.className = 'pc-status';
+    el.textContent = this._t('pc_sending', { n, t: total });
+    const sheet = this._el.pcmodal && this._el.pcmodal.querySelector('.pc-sheet');
+    if (sheet) sheet.classList.add('pc-busy');
+    if (this._el.pcFoot) this._el.pcFoot.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  }
+  async _pcRun(calls, msgKey) {
+    if (this._pcBusy) return;
+    if (!calls.length) { this._toast(this._t(msgKey)); this._closePrecond(); return; }
+    this._pcBusy = true;
+    this._pcStatus = { kind: '', text: this._t('pc_sending', { n: 1, t: calls.length }) };
+    this._pcSetProgress(1, calls.length);
+    const failed = [];
+    const gap = Math.round(Number(this._cfg.command_delay || 0) * 1000);
+    const carDomain = (d) => d === 'climate' || d === 'switch' || d === 'select';
+    try {
+      for (let i = 0; i < calls.length; i++) {
+        this._pcSetProgress(i + 1, calls.length);
+        const res = await this._pcCallOne(calls[i]);
+        if (!res.ok) failed.push(res);
+        if (i < calls.length - 1 && gap > 0 && carDomain(calls[i][0]) && carDomain(calls[i + 1][0])) {
+          await this._pcDelay(gap);
+        }
+      }
+    } finally {
+      this._pcBusy = false;
+    }
+    if (!failed.length) {
+      this._pcStatus = { kind: 'ok', text: this._t(msgKey) };
+      this._toast(this._t(msgKey));
+      this._closePrecond();
+    } else {
+      const items = failed.map((f) => f.label).join(', ');
+      const msg = this._t('pc_some_failed', { items });
+      this._pcStatus = { kind: 'err', text: msg };
+      this._toast(msg);
+      const sheet = this._el && this._el.pcmodal && this._el.pcmodal.querySelector('.pc-sheet');
+      if (sheet) sheet.classList.remove('pc-busy');
+      this._paintPrecond();
+    }
   }
   _pcStartNow() {
     if (!this._pc || !this._s(this._climateId())) return;

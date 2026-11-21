@@ -138,6 +138,8 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `find_action` | string | `map` if a location entity exists, otherwise `honk` | `map` opens the in-card map; `honk` presses `button.<prefix>_find_car` as before |
 | `map_marker` | string | `car` | `car` shows a small render of the card's 360° car on the in-card map pin (Home Assistant map card). `default` keeps the stock entity marker |
 | `map_marker_frame` | number | the profile `start_frame` (EX5: 5, a three-quarter view) | 1-based frame number used for the car map marker |
+| `command_delay` | number | `2` | Seconds to wait between pre-conditioning commands sent to the car. The Geely cloud accepts only one remote command at a time. `0` disables the gap and the retry backoffs. Writes to schedule helpers (`input_*`) stay sequential but skip this delay |
+| `time_format` | string | auto | `24h` or `12h` for clock times in the card (including the scheduled-start label). If omitted, Hebrew defaults to 24-hour time and other languages follow Home Assistant's locale `time_format`. The Start-at picker itself is always 24-hour |
 | `precond_entities` | list | auto-detected | Optional extra `switch` / `select` entities to show in the pre-conditioning panel. Auto-detected controls (`defrost`, `steering_wheel_heat`, `window_ventilation`, `seat_heat_*`, `seat_vent_*`) that do not exist are hidden. An entry that matches one of those suffixes overrides the auto-detected entity |
 | `precond_schedule_entity` | string | – | Optional `input_datetime` (time only). Together with `precond_schedule_enabled_entity`, enables **Start at** in the panel |
 | `precond_schedule_enabled_entity` | string | – | Optional `input_boolean` that arms the scheduled start |
@@ -206,9 +208,11 @@ Quick presets (**Cool** / **Heat**, or **קירור** / **חימום** in Hebrew
 - Cool: 20°, Rapid Cooling, seat ventilation Medium
 - Heat: 25°, Rapid Warming, seat heating Medium, steering-wheel heat, defrost
 
-**Start now** asks for confirmation (it starts the car's climate remotely), then calls `climate.set_temperature` with `hvac_mode: heat_cool`, `climate.set_preset_mode` if a rapid preset is selected, and finally the chosen switches and selects. If the climate is already on, a **Stop** button turns HVAC off and clears the accessories the panel controls. The panel notes that the car turns the climate off on its own after its built-in time.
+**Start now** asks for confirmation (it starts the car's climate remotely), then sends commands **one at a time**: `climate.set_temperature` with `hvac_mode: heat_cool`, `climate.set_preset_mode` if a rapid preset is selected and is not already active, then only the switches and selects that need to change. Accessories already in the desired state are skipped, and an accessory that is `unknown` or `unavailable` is not turned off (turning it on is still sent). The card waits `command_delay` seconds (default 2) between commands, because the Geely cloud accepts only one remote request at a time. If a call fails with “the last request has not yet been executed / send the command later”, it is retried up to three times (3s, 6s, 10s). Home Assistant's raw error toasts are suppressed; the panel shows progress (`Sending 2/4…` / `שולח 2/4…`) and, if something still fails, which items failed. Buttons stay visible but disabled while sending.
 
-The card cannot fire a delayed start while it is closed, so a scheduled start needs helpers on the Home Assistant side. Configure an `input_datetime` (time only), an `input_boolean`, and optionally an `input_text` (max 255 characters) as shown below. **Start at** then writes the next occurrence's time, turns the boolean on, and stores compact JSON in the text helper (`t`, `p`, `df`, `wh`, `wv`, `shd`, `shp`, `svd`, `svp`, plus `e` for extras). If those helpers are not configured, **Start at** is hidden.
+If the climate is already on, a **Stop** button turns HVAC off first, then only the accessories that are currently on. The panel notes that the car turns the climate off on its own after its built-in time.
+
+The card cannot fire a delayed start while it is closed, so a scheduled start needs helpers on the Home Assistant side. Configure an `input_datetime` (time only), an `input_boolean`, and optionally an `input_text` (max 255 characters) as shown below. **Start at** uses a 24-hour hour / minute picker (hours 00–23, minutes in 5-minute steps). If a schedule is already armed, the picker opens on the helper's time (snapped to 5 minutes); otherwise it defaults to the next full hour plus one, or 07:30 if the clock is unavailable. Clock times in the card (including the scheduled-time label) use `time_format` when set; if it is omitted, Hebrew defaults to 24-hour time and other languages follow Home Assistant's locale. **Start at** then writes the next occurrence's time, turns the boolean on, and stores compact JSON in the text helper (`t`, `p`, `df`, `wh`, `wv`, `shd`, `shp`, `svd`, `svp`, plus `e` for extras). If those helpers are not configured, **Start at** is hidden.
 
 ```yaml
 type: custom:geely-3d-card
@@ -239,7 +243,7 @@ input_text:
     max: 255
 ```
 
-Sample automation. It runs at the helper time only if the boolean is on, validates the JSON before applying it, then turns the boolean off. Replace the climate / switch / select entity ids with yours. Mode is `single`.
+Sample automation. It runs at the helper time only if the boolean is on, validates the JSON before applying it, then turns the boolean off. Commands are sent one at a time with a 2 second delay, accessories already at the desired state are skipped (an `unknown` / `unavailable` switch is not turned off), accessory steps use `continue_on_error`, and a command is retried with backoff only while the entity stays in a known wrong state — not when it stays `unknown` after a send (steering-wheel heat is often `unknown`). Replace the climate / switch / select entity ids with yours. Mode is `single`.
 
 ```yaml
 alias: Geely pre-conditioning schedule
@@ -259,102 +263,160 @@ action:
   - variables:
       raw: "{{ states('input_text.geely_precond_settings') }}"
       cfg: "{{ raw | from_json(default=none) }}"
+      extras: >-
+        {{ (cfg.e if cfg is mapping and cfg.e is list else [])
+           | selectattr(0, 'string')
+           | map('list')
+           | list }}
   - condition: template
     value_template: "{{ cfg is mapping and cfg.t is number }}"
   - action: climate.set_temperature
+    continue_on_error: true
     target:
       entity_id: climate.my_geely_ex5_1234_climate
     data:
       temperature: "{{ cfg.t }}"
       hvac_mode: heat_cool
+  - delay:
+      seconds: 2
   - if:
       - condition: template
-        value_template: "{{ cfg.p is string and cfg.p not in ['', 'none', 'auto'] }}"
+        value_template: "{{ cfg.p is string and cfg.p not in ['', 'none', 'auto'] and state_attr('climate.my_geely_ex5_1234_climate', 'preset_mode') != cfg.p }}"
     then:
       - action: climate.set_preset_mode
+        continue_on_error: true
         target:
           entity_id: climate.my_geely_ex5_1234_climate
         data:
           preset_mode: "{{ cfg.p }}"
-  - if:
-      - condition: template
-        value_template: "{{ cfg.df is defined }}"
-    then:
-      - action: "switch.turn_{{ 'on' if cfg.df else 'off' }}"
-        target:
-          entity_id: switch.my_geely_ex5_1234_defrost
-  - if:
-      - condition: template
-        value_template: "{{ cfg.wh is defined }}"
-    then:
-      - action: "switch.turn_{{ 'on' if cfg.wh else 'off' }}"
-        target:
-          entity_id: switch.my_geely_ex5_1234_steering_wheel_heat
-  - if:
-      - condition: template
-        value_template: "{{ cfg.wv is defined }}"
-    then:
-      - action: "switch.turn_{{ 'on' if cfg.wv else 'off' }}"
-        target:
-          entity_id: switch.my_geely_ex5_1234_window_ventilation
-  - if:
-      - condition: template
-        value_template: "{{ cfg.shd is string }}"
-    then:
-      - action: select.select_option
-        target:
-          entity_id: select.my_geely_ex5_1234_seat_heat_driver
-        data:
-          option: "{{ cfg.shd }}"
-  - if:
-      - condition: template
-        value_template: "{{ cfg.shp is string }}"
-    then:
-      - action: select.select_option
-        target:
-          entity_id: select.my_geely_ex5_1234_seat_heat_passenger
-        data:
-          option: "{{ cfg.shp }}"
-  - if:
-      - condition: template
-        value_template: "{{ cfg.svd is string }}"
-    then:
-      - action: select.select_option
-        target:
-          entity_id: select.my_geely_ex5_1234_seat_vent_driver
-        data:
-          option: "{{ cfg.svd }}"
-  - if:
-      - condition: template
-        value_template: "{{ cfg.svp is string }}"
-    then:
-      - action: select.select_option
-        target:
-          entity_id: select.my_geely_ex5_1234_seat_vent_passenger
-        data:
-          option: "{{ cfg.svp }}"
+      - delay:
+          seconds: 2
   - repeat:
-      for_each: "{{ cfg.e if cfg.e is list else [] }}"
+      for_each: >
+        {% set ns = namespace(items=[]) %}
+        {% if cfg.df is defined %}
+          {% set ns.items = ns.items + [{'id': 'switch.my_geely_ex5_1234_defrost', 'kind': 'switch', 'want': cfg.df}] %}
+        {% endif %}
+        {% if cfg.wh is defined %}
+          {% set ns.items = ns.items + [{'id': 'switch.my_geely_ex5_1234_steering_wheel_heat', 'kind': 'switch', 'want': cfg.wh}] %}
+        {% endif %}
+        {% if cfg.wv is defined %}
+          {% set ns.items = ns.items + [{'id': 'switch.my_geely_ex5_1234_window_ventilation', 'kind': 'switch', 'want': cfg.wv}] %}
+        {% endif %}
+        {% if cfg.shd is string %}
+          {% set ns.items = ns.items + [{'id': 'select.my_geely_ex5_1234_seat_heat_driver', 'kind': 'select', 'want': cfg.shd}] %}
+        {% endif %}
+        {% if cfg.shp is string %}
+          {% set ns.items = ns.items + [{'id': 'select.my_geely_ex5_1234_seat_heat_passenger', 'kind': 'select', 'want': cfg.shp}] %}
+        {% endif %}
+        {% if cfg.svd is string %}
+          {% set ns.items = ns.items + [{'id': 'select.my_geely_ex5_1234_seat_vent_driver', 'kind': 'select', 'want': cfg.svd}] %}
+        {% endif %}
+        {% if cfg.svp is string %}
+          {% set ns.items = ns.items + [{'id': 'select.my_geely_ex5_1234_seat_vent_passenger', 'kind': 'select', 'want': cfg.svp}] %}
+        {% endif %}
+        {% for pair in (cfg.e if cfg.e is list else []) %}
+          {% if pair is sequence and pair | length >= 2 and pair[0] is string %}
+            {% set ns.items = ns.items + [{'id': pair[0], 'kind': pair[0].split('.')[0], 'want': pair[1]}] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
       sequence:
         - variables:
-            eid: "{{ repeat.item[0] }}"
-            val: "{{ repeat.item[1] }}"
+            eid: "{{ repeat.item.id }}"
+            kind: "{{ repeat.item.kind }}"
+            want: "{{ repeat.item.want }}"
+            want_on: "{{ want not in [false, 0, '0', none, ''] }}"
+            desired: "{{ 'on' if kind == 'switch' and want_on else ('off' if kind == 'switch' else want) }}"
+            cur: "{{ states(eid) | lower if kind == 'switch' else states(eid) }}"
+            skip: >-
+              {{ (kind == 'switch' and ((cur in ['unknown', 'unavailable'] and not want_on) or cur == desired))
+                 or (kind == 'select' and (want is not string or cur == want))
+                 or kind not in ['switch', 'select'] }}
         - if:
             - condition: template
-              value_template: "{{ eid is string and eid.split('.')[0] == 'switch' }}"
+              value_template: "{{ not skip }}"
           then:
-            - action: "switch.turn_{{ 'on' if val else 'off' }}"
-              target:
-                entity_id: "{{ eid }}"
-        - if:
-            - condition: template
-              value_template: "{{ eid is string and eid.split('.')[0] == 'select' and val is string }}"
-          then:
-            - action: select.select_option
-              target:
-                entity_id: "{{ eid }}"
-              data:
-                option: "{{ val }}"
+            - if:
+                - condition: template
+                  value_template: "{{ kind == 'switch' }}"
+              then:
+                - action: "switch.turn_{{ 'on' if want_on else 'off' }}"
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ eid }}"
+              else:
+                - action: select.select_option
+                  continue_on_error: true
+                  target:
+                    entity_id: "{{ eid }}"
+                  data:
+                    option: "{{ want }}"
+            - delay:
+                seconds: 3
+            - if:
+                - condition: template
+                  value_template: "{{ states(eid) not in ['unknown', 'unavailable'] and ((kind == 'switch' and states(eid) | lower != desired) or (kind == 'select' and states(eid) != want)) }}"
+              then:
+                - if:
+                    - condition: template
+                      value_template: "{{ kind == 'switch' }}"
+                  then:
+                    - action: "switch.turn_{{ 'on' if want_on else 'off' }}"
+                      continue_on_error: true
+                      target:
+                        entity_id: "{{ eid }}"
+                  else:
+                    - action: select.select_option
+                      continue_on_error: true
+                      target:
+                        entity_id: "{{ eid }}"
+                      data:
+                        option: "{{ want }}"
+                - delay:
+                    seconds: 6
+                - if:
+                    - condition: template
+                      value_template: "{{ states(eid) not in ['unknown', 'unavailable'] and ((kind == 'switch' and states(eid) | lower != desired) or (kind == 'select' and states(eid) != want)) }}"
+                  then:
+                    - if:
+                        - condition: template
+                          value_template: "{{ kind == 'switch' }}"
+                      then:
+                        - action: "switch.turn_{{ 'on' if want_on else 'off' }}"
+                          continue_on_error: true
+                          target:
+                            entity_id: "{{ eid }}"
+                      else:
+                        - action: select.select_option
+                          continue_on_error: true
+                          target:
+                            entity_id: "{{ eid }}"
+                          data:
+                            option: "{{ want }}"
+                    - delay:
+                        seconds: 10
+                    - if:
+                        - condition: template
+                          value_template: "{{ states(eid) not in ['unknown', 'unavailable'] and ((kind == 'switch' and states(eid) | lower != desired) or (kind == 'select' and states(eid) != want)) }}"
+                      then:
+                        - if:
+                            - condition: template
+                              value_template: "{{ kind == 'switch' }}"
+                          then:
+                            - action: "switch.turn_{{ 'on' if want_on else 'off' }}"
+                              continue_on_error: true
+                              target:
+                                entity_id: "{{ eid }}"
+                          else:
+                            - action: select.select_option
+                              continue_on_error: true
+                              target:
+                                entity_id: "{{ eid }}"
+                              data:
+                                option: "{{ want }}"
+            - delay:
+                seconds: 2
 ```
 
 If `from_json` cannot parse the helper (invalid or empty JSON), the `cfg.t is number` condition fails and nothing is sent to the car.
@@ -409,6 +471,10 @@ language: he
 ```
 
 ## Changelog
+
+### 1.7.3
+- Pre-conditioning commands are sent one at a time with a configurable `command_delay` (default 2 seconds). Accessories already in the desired state are skipped, and an `unknown` / `unavailable` accessory is not turned off. A Geely “last request has not yet been executed / send the command later” error is retried up to three times (3s, 6s, 10s). The panel shows progress and a clear final status; Home Assistant's raw error toasts are suppressed. **Stop** turns HVAC off first, then only accessories that are currently on. The sample schedule automation in this README follows the same rules.
+- **Start at** uses a 24-hour hour / minute picker (minutes in 5-minute steps) instead of the browser's locale-dependent time input. If a schedule is not already armed, the default time is the next full hour plus one (or 07:30). Optional `time_format: 24h` / `12h` controls other clock labels in the card; Hebrew defaults to 24-hour time, otherwise Home Assistant's locale is followed.
 
 ### 1.7.2
 - The Find-car map uses a small render of the card's car as the pin on Home Assistant's map card (instead of the default entity initials). Configurable with `map_marker` (`car` / `default`) and `map_marker_frame`. If the map engine cannot be hooked, the stock marker is kept. The OpenStreetMap iframe fallback is unchanged.
