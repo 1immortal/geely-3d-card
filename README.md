@@ -136,6 +136,8 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `charger_switch_entity` | string | – | Optional. A single `switch` used for both start (`turn_on`) and stop (`turn_off`). Used for a side if the matching start/stop entity is not set |
 | `location_entity` | string | auto-detected | Optional. Location entity used by the map (`device_tracker.<prefix>_location` is used if it exists) |
 | `find_action` | string | `map` if a location entity exists, otherwise `honk` | `map` opens the in-card map; `honk` presses `button.<prefix>_find_car` as before |
+| `map_marker` | string | `car` | `car` shows a small render of the card's 360° car on the in-card map pin (Home Assistant map card). `default` keeps the stock entity marker |
+| `map_marker_frame` | number | the profile `start_frame` (EX5: 5, a three-quarter view) | 1-based frame number used for the car map marker |
 | `precond_entities` | list | auto-detected | Optional extra `switch` / `select` entities to show in the pre-conditioning panel. Auto-detected controls (`defrost`, `steering_wheel_heat`, `window_ventilation`, `seat_heat_*`, `seat_vent_*`) that do not exist are hidden. An entry that matches one of those suffixes overrides the auto-detected entity |
 | `precond_schedule_entity` | string | – | Optional `input_datetime` (time only). Together with `precond_schedule_enabled_entity`, enables **Start at** in the panel |
 | `precond_schedule_enabled_entity` | string | – | Optional `input_boolean` that arms the scheduled start |
@@ -185,6 +187,8 @@ Tapping **Find car** opens an in-card map with a pin at the car's location (the 
 If no location entity is available, the button keeps the previous behaviour and presses `button.<prefix>_find_car`.
 
 The map prefers Home Assistant's built-in map card. If that cannot be created, it falls back to an OpenStreetMap embed (no extra libraries are bundled). Below the map: the current zone or home/away state, a relative last-updated time, **Navigate** (Google Maps), **Waze**, and **Honk & flash** (with confirmation, only if the find-car button exists).
+
+On the Home Assistant map card the default marker is a small render of the car (the same frames as the 360° view, the profile `start_frame` unless you set `map_marker_frame`). Set `map_marker: default` to keep the stock entity pin. If the map's Leaflet / engine API cannot be reached within a couple of seconds, the stock marker is left in place. The OpenStreetMap iframe fallback keeps its own pin.
 
 ```yaml
 type: custom:geely-3d-card
@@ -405,6 +409,9 @@ language: he
 ```
 
 ## Changelog
+
+### 1.7.2
+- The Find-car map uses a small render of the card's car as the pin on Home Assistant's map card (instead of the default entity initials). Configurable with `map_marker` (`car` / `default`) and `map_marker_frame`. If the map engine cannot be hooked, the stock marker is kept. The OpenStreetMap iframe fallback is unchanged.
 
 ### 1.7.1
 - The pre-conditioning panel's no-preset chip is labelled **Normal** / **רגיל** (was Auto / אוטו). Behaviour is unchanged.

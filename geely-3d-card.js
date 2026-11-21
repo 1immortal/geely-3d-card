@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.7.1';
+const GEC_VERSION = '1.7.2';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -164,6 +164,21 @@ class Geely3DCard extends HTMLElement {
         throw new Error('geely-3d-card: "find_action" must be map or honk');
       }
     }
+    let mapMarker = 'car';
+    if (c.map_marker != null && String(c.map_marker).trim() !== '') {
+      mapMarker = String(c.map_marker).trim().toLowerCase();
+      if (mapMarker !== 'car' && mapMarker !== 'default') {
+        throw new Error('geely-3d-card: "map_marker" must be car or default');
+      }
+    }
+    let mapMarkerFrame = null;
+    if (c.map_marker_frame != null && String(c.map_marker_frame).trim() !== '') {
+      const n = Number(c.map_marker_frame);
+      if (!Number.isInteger(n) || n < 1) {
+        throw new Error('geely-3d-card: "map_marker_frame" must be a positive integer');
+      }
+      mapMarkerFrame = n;
+    }
     const precondEntities = [];
     if (c.precond_entities != null && String(c.precond_entities).trim() !== '') {
       const list = Array.isArray(c.precond_entities) ? c.precond_entities : [c.precond_entities];
@@ -200,6 +215,8 @@ class Geely3DCard extends HTMLElement {
       precond_enabled: chargeOpt('precond_schedule_enabled_entity', ['input_boolean']),
       precond_settings: chargeOpt('precond_settings_entity', ['input_text']),
       precond_entities: precondEntities,
+      map_marker: mapMarker,
+      map_marker_frame: mapMarkerFrame,
     };
     this._sig = null;
     this._prof = null;
@@ -331,6 +348,7 @@ class Geely3DCard extends HTMLElement {
     this._card.classList.toggle('light', !dark);
     const sig = this._signature(dark);
     if (sig !== this._sig) { this._sig = sig; this._render(); }
+    this._updateCarMarker();
   }
 
   _signature(dark) {
@@ -838,6 +856,7 @@ class Geely3DCard extends HTMLElement {
     this._fillMap(E.mapCanvas, locId, coords);
   }
   _closeMap() {
+    this._clearCarMarker();
     if (this._el && this._el.mmap) this._el.mmap.classList.remove('show');
     if (this._el && this._el.mapCanvas) this._el.mapCanvas.innerHTML = '';
     this._syncEsc();
@@ -884,7 +903,148 @@ class Geely3DCard extends HTMLElement {
       card.hass = this._hass;
       canvas.innerHTML = '';
       canvas.appendChild(card);
+      this._hookCarMarker(card, coords);
     }).catch(() => fallback());
+  }
+
+  /* ---------- car map marker ---------- */
+  _mapMarkerSrc() {
+    const P = this._profile();
+    if (P.single) return P.single;
+    if (!P.base) return null;
+    const frames = Math.max(Number(P.frames) || 0, 1);
+    let frame = Number(this._cfg.map_marker_frame);
+    if (!Number.isInteger(frame) || frame < 1) frame = Number(P.start) || 1;
+    frame = Math.min(Math.max(frame, 1), frames);
+    return `${P.base}${frame}.${P.ext}`;
+  }
+  _makeCarPin() {
+    const src = this._mapMarkerSrc();
+    if (!src) return null;
+    const P = this._profile();
+    const w = 72;
+    const studio = !!P.studio;
+    const h = studio ? 62 : 52;
+    const wrap = document.createElement('div');
+    wrap.className = 'gec-pin' + (studio ? ' studio' : '');
+    wrap.style.cssText = 'width:72px;display:flex;flex-direction:column;align-items:center;line-height:0;'
+      + 'filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));pointer-events:none;box-sizing:border-box;'
+      + (studio ? 'background:#fff;border-radius:12px;padding:4px 4px 0;' : '');
+    if (studio && P.studio && P.studio !== 'transparent') wrap.style.background = P.studio;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.draggable = false;
+    img.src = src;
+    img.style.cssText = 'width:72px;height:auto;max-height:40px;max-width:72px;display:block;object-fit:contain;pointer-events:none';
+    const tip = document.createElement('i');
+    tip.className = 'gec-pin-tip';
+    const tipColor = studio ? (P.studio && P.studio !== 'transparent' ? P.studio : '#fff') : '#243044';
+    tip.style.cssText = 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;'
+      + `border-top:9px solid ${tipColor};display:block;margin-top:-1px;align-self:center`;
+    wrap.append(img, tip);
+    return { el: wrap, size: [w, h], anchor: [w / 2, h] };
+  }
+  _findHaMap(root) {
+    const walk = (node, d) => {
+      if (!node || d > 10) return null;
+      if (node.tagName === 'HA-MAP') return node;
+      const sr = node.shadowRoot;
+      if (sr) {
+        const direct = sr.querySelector('ha-map');
+        if (direct) return direct;
+        for (const child of sr.querySelectorAll('*')) {
+          const found = walk(child, d + 1);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return walk(root, 0);
+  }
+  _leafletFrom(haMap) {
+    if (haMap.leafletMap && haMap.Leaflet) return { map: haMap.leafletMap, L: haMap.Leaflet };
+    const eng = haMap._engine;
+    if (eng && eng.leafletMap && (eng.Leaflet || (typeof window !== 'undefined' && window.L))) {
+      return { map: eng.leafletMap, L: eng.Leaflet || window.L };
+    }
+    return null;
+  }
+  _haMapReady(card) {
+    if (!card) return false;
+    const tag = String(card.tagName || '');
+    return !!(card.shadowRoot || tag === 'HUI-MAP-CARD' || /MAP-CARD$/.test(tag) || (card.querySelector && card.querySelector('ha-map')));
+  }
+  _hookCarMarker(card, coords) {
+    this._clearCarMarker();
+    if (!coords || !this._cfg || this._cfg.map_marker !== 'car') return;
+    if (!this._haMapReady(card) && !(card && card.shadowRoot)) {
+      // Plain mock / non-map host: do not spin for 2s
+      if (!card || (!card.shadowRoot && String(card.tagName || '') === 'DIV')) return;
+    }
+    if (!this._haMapReady(card)) return;
+    const pin = this._makeCarPin();
+    if (!pin) return;
+    const started = Date.now();
+    const tryHook = () => {
+      this._mapHookTimer = null;
+      if (!this._el || !this._el.mmap || !this._el.mmap.classList.contains('show')) return;
+      const haMap = this._findHaMap(card);
+      const engine = haMap && haMap._engine && typeof haMap._engine.addMarker === 'function' ? haMap._engine : null;
+      const leaf = haMap ? this._leafletFrom(haMap) : null;
+      if (engine || leaf) { this._placeCarMarker(haMap, engine, leaf, pin, coords); return; }
+      if (Date.now() - started >= 2000) return;
+      this._mapHookTimer = setTimeout(tryHook, 100);
+    };
+    tryHook();
+  }
+  _placeCarMarker(haMap, engine, leaf, pin, coords) {
+    this._hideDefaultMarkers(haMap);
+    const latlng = [coords.lat, coords.lon];
+    if (engine) {
+      try {
+        this._mapMarkerHandle = engine.addMarker(pin.el, latlng, {
+          size: pin.size, anchor: pin.anchor, interactive: false, focusable: false,
+          raised: true, cluster: false, nativeTitle: false,
+        });
+        this._mapMarkerKind = 'engine';
+        return;
+      } catch (err) { /* try Leaflet */ }
+    }
+    if (leaf && leaf.L && leaf.map && leaf.L.divIcon && leaf.L.marker) {
+      const icon = leaf.L.divIcon({ html: pin.el, iconSize: pin.size, iconAnchor: pin.anchor, className: 'gec-pin-icon' });
+      this._mapMarkerHandle = leaf.L.marker(latlng, { icon, keyboard: false, interactive: false, zIndexOffset: 1000 }).addTo(leaf.map);
+      this._mapMarkerKind = 'leaflet';
+    }
+  }
+  _hideDefaultMarkers(haMap) {
+    const root = haMap && haMap.shadowRoot;
+    if (!root || root.querySelector('style[data-gec-hide-markers]')) return;
+    const st = document.createElement('style');
+    st.setAttribute('data-gec-hide-markers', '');
+    st.textContent = 'ha-entity-marker{opacity:0!important;pointer-events:none!important}';
+    root.appendChild(st);
+  }
+  _updateCarMarker() {
+    if (!this._el || !this._el.mmap || !this._el.mmap.classList.contains('show') || !this._mapMarkerHandle) return;
+    const coords = this._locCoords(this._s(this._locationId()));
+    if (!coords) return;
+    const h = this._mapMarkerHandle;
+    const latlng = [coords.lat, coords.lon];
+    try {
+      if (typeof h.setLocation === 'function') h.setLocation(latlng);
+      else if (h.marker && typeof h.marker.setLatLng === 'function') h.marker.setLatLng(latlng);
+      else if (typeof h.setLatLng === 'function') h.setLatLng(latlng);
+    } catch (err) { /* leave the last position */ }
+  }
+  _clearCarMarker() {
+    if (this._mapHookTimer) { clearTimeout(this._mapHookTimer); this._mapHookTimer = null; }
+    const h = this._mapMarkerHandle;
+    this._mapMarkerHandle = null;
+    this._mapMarkerKind = null;
+    if (!h) return;
+    try {
+      if (typeof h.remove === 'function') h.remove();
+    } catch (err) { /* already gone */ }
   }
 
 
