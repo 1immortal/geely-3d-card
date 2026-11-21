@@ -484,6 +484,9 @@ language: he
 
 ## Changelog
 
+### 1.7.4
+- The **Start at** hour / minute picker (and clock times shown as text) always display as `HH : MM` from left to right, including in Hebrew RTL. The label stays in the page direction; the time itself is isolated as LTR.
+
 ### 1.7.3
 - Pre-conditioning commands are sent one at a time with a configurable `command_delay` (default 2 seconds). Accessories already in the desired state are skipped, and an `unknown` / `unavailable` accessory is not turned off. A Geely “last request has not yet been executed / send the command later” error is retried up to three times (3s, 6s, 10s). The panel shows progress and a clear final status; Home Assistant's raw error toasts are suppressed. **Stop** turns HVAC off first, then only accessories that are currently on. The sample schedule automation in this README follows the same rules.
 - **Start at** uses a 24-hour hour / minute picker (minutes in 5-minute steps) instead of the browser's locale-dependent time input. If a schedule is not already armed, the default time is the next full hour plus one (or 07:30). Optional `time_format: 24h` / `12h` controls other clock labels in the card; Hebrew defaults to 24-hour time, otherwise Home Assistant's locale is followed.

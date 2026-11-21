@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.7.3';
+const GEC_VERSION = '1.7.4';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -580,7 +580,7 @@ class Geely3DCard extends HTMLElement {
   .pc-who { font-size:11.5px; color:var(--zc-mut); min-width:3.5em; }
   .pc-segrow { display:flex; align-items:center; gap:8px; }
   .pc-note { font-size:11.5px; color:var(--zc-mut); line-height:1.35; }
-  .pc-timewrap { display:flex; align-items:center; gap:6px; flex:1 1 auto; justify-content:flex-end; }
+  .pc-timewrap { display:flex; align-items:center; gap:6px; flex:1 1 auto; justify-content:flex-end; direction:ltr; unicode-bidi:isolate; }
   .pc-time-sel { border:none; border-radius:10px; background:var(--zc-pan2); color:inherit;
     font:600 14px var(--zc-font); padding:8px 6px; min-width:3.6em; text-align:center; }
   .pc-time-colon { font:700 16px var(--zc-font); opacity:.7; }
@@ -1405,8 +1405,8 @@ class Geely3DCard extends HTMLElement {
       ${tog('wv', ids.wv, this._t('pc_winvent'), 'mdi:window-open')}
       ${extraRows}
       <div class="pc-note">${esc(this._t('pc_note'))}</div>
-      ${canAt ? `<div class="pc-row"><span class="lab">${esc(this._t('pc_at'))}${this._fmtClock(st.time) ? ` <span class="pc-time-text">${esc(this._fmtClock(st.time))}</span>` : ''}</span>
-        <span class="pc-timewrap">${this._pcTimeSelects(st.time)}</span></div>` : ''}`;
+      ${canAt ? `<div class="pc-row"><span class="lab">${esc(this._t('pc_at'))}${this._fmtClock(st.time) ? ` ${this._clockText(st.time)}` : ''}</span>
+        <span class="pc-timewrap" dir="ltr">${this._pcTimeSelects(st.time)}</span></div>` : ''}`;
     const clim = this._s(this._climateId());
     const climOn = !!(clim && clim.state && clim.state !== 'off' && !GEC_BAD.includes(String(clim.state).toLowerCase()));
     const busy = !!this._pcBusy;
@@ -1429,6 +1429,10 @@ class Geely3DCard extends HTMLElement {
         if (lab) lab.textContent = this._fmtClock(this._pc.time);
       });
     });
+  }
+  _clockText(hhmm) {
+    const t = this._fmtClock(hhmm);
+    return t ? `<bdi class="pc-time-text" dir="ltr">${this._esc(t)}</bdi>` : '';
   }
   _pcTimeSelects(hhmm) {
     const t = this._pcSnapTime(hhmm);
