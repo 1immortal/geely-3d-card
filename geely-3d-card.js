@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.7.0';
+const GEC_VERSION = '1.7.1';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -41,7 +41,7 @@ const GEC_I18N = {
     find_map_title: "Where's my car?", find_navigate: 'Navigate', find_waze: 'Waze',
     find_honk: 'Honk & flash', find_close: 'Close', loc_unavailable: 'Location unavailable',
     c_honk: 'Honk and flash the car?',
-    pc_title: 'Pre-condition', pc_temp: 'Temperature', pc_auto: 'Auto',
+    pc_title: 'Pre-condition', pc_temp: 'Temperature', pc_auto: 'Normal',
     pc_rapid_cool: 'Rapid Cooling', pc_rapid_warm: 'Rapid Warming',
     pc_defrost: 'Defrost windshield', pc_wheel: 'Steering wheel heat',
     pc_seat_heat: 'Seat heating', pc_seat_vent: 'Seat ventilation',
@@ -87,7 +87,7 @@ const GEC_I18N = {
     find_map_title: 'איפה הרכב?', find_navigate: 'נווט', find_waze: 'Waze',
     find_honk: 'צפור והבהב', find_close: 'סגור', loc_unavailable: 'מיקום לא זמין',
     c_honk: 'לצפור ולהבהב?',
-    pc_title: 'מיזוג מראש', pc_temp: 'טמפרטורה', pc_auto: 'אוטו',
+    pc_title: 'מיזוג מראש', pc_temp: 'טמפרטורה', pc_auto: 'רגיל',
     pc_rapid_cool: 'קירור מהיר', pc_rapid_warm: 'חימום מהיר',
     pc_defrost: 'הפשרת שמשה', pc_wheel: 'חימום הגה',
     pc_seat_heat: 'חימום מושב', pc_seat_vent: 'איוורור מושב',
