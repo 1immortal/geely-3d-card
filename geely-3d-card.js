@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.6.0';
+const GEC_VERSION = '1.7.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -41,6 +41,16 @@ const GEC_I18N = {
     find_map_title: "Where's my car?", find_navigate: 'Navigate', find_waze: 'Waze',
     find_honk: 'Honk & flash', find_close: 'Close', loc_unavailable: 'Location unavailable',
     c_honk: 'Honk and flash the car?',
+    pc_title: 'Pre-condition', pc_temp: 'Temperature', pc_auto: 'Auto',
+    pc_rapid_cool: 'Rapid Cooling', pc_rapid_warm: 'Rapid Warming',
+    pc_defrost: 'Defrost windshield', pc_wheel: 'Steering wheel heat',
+    pc_seat_heat: 'Seat heating', pc_seat_vent: 'Seat ventilation',
+    pc_driver: 'Driver', pc_passenger: 'Passenger', pc_winvent: 'Window ventilation',
+    pc_now: 'Start now', pc_at: 'Start at', pc_stop: 'Stop',
+    pc_cool: 'Cool', pc_heat: 'Heat',
+    pc_note: 'The car turns the climate off on its own after its built-in time.',
+    c_precond: "Start the car's climate remotely?",
+    t_pc_sched: 'Pre-conditioning scheduled', t_pc_json: 'Settings are too long to save',
     charger_ctrl_1: 'Charger', charger_ctrl_2: 'control',
     odometer: 'Odometer', to_service: 'To service', consumption: 'Consumption', last_trip: 'Last trip', kwh100: 'kWh/100 km',
     seat_heat_driver: 'Driver seat heating', seat_heat_passenger: 'Passenger seat heating',
@@ -77,6 +87,16 @@ const GEC_I18N = {
     find_map_title: 'איפה הרכב?', find_navigate: 'נווט', find_waze: 'Waze',
     find_honk: 'צפור והבהב', find_close: 'סגור', loc_unavailable: 'מיקום לא זמין',
     c_honk: 'לצפור ולהבהב?',
+    pc_title: 'מיזוג מראש', pc_temp: 'טמפרטורה', pc_auto: 'אוטו',
+    pc_rapid_cool: 'קירור מהיר', pc_rapid_warm: 'חימום מהיר',
+    pc_defrost: 'הפשרת שמשה', pc_wheel: 'חימום הגה',
+    pc_seat_heat: 'חימום מושב', pc_seat_vent: 'איוורור מושב',
+    pc_driver: 'נהג', pc_passenger: 'נוסע', pc_winvent: 'איוורור חלונות',
+    pc_now: 'הפעל עכשיו', pc_at: 'הפעל בשעה', pc_stop: 'עצור',
+    pc_cool: 'קירור', pc_heat: 'חימום',
+    pc_note: 'הרכב מכבה את המיזוג מעצמו אחרי הזמן המובנה.',
+    c_precond: 'להפעיל את מיזוג הרכב מרחוק?',
+    t_pc_sched: 'מיזוג מראש תוזמן', t_pc_json: 'ההגדרות ארוכות מדי לשמירה',
     charger_ctrl_1: 'שליטת', charger_ctrl_2: 'עמדת טעינה',
     odometer: 'מד מרחק', to_service: 'לטיפול', consumption: 'צריכה', last_trip: 'נסיעה אחרונה', kwh100: 'קוט״ש/100',
     seat_heat_driver: 'חימום מושב נהג', seat_heat_passenger: 'חימום מושב נוסע',
@@ -144,6 +164,20 @@ class Geely3DCard extends HTMLElement {
         throw new Error('geely-3d-card: "find_action" must be map or honk');
       }
     }
+    const precondEntities = [];
+    if (c.precond_entities != null && String(c.precond_entities).trim() !== '') {
+      const list = Array.isArray(c.precond_entities) ? c.precond_entities : [c.precond_entities];
+      for (const raw of list) {
+        if (raw == null || String(raw).trim() === '') continue;
+        const id = String(raw).trim().toLowerCase();
+        if (!entityIdRe.test(id)) throw new Error('geely-3d-card: "precond_entities" must be a list of valid entity ids');
+        const domain = id.split('.')[0];
+        if (domain !== 'switch' && domain !== 'select') {
+          throw new Error('geely-3d-card: "precond_entities" entries must be switch or select entities');
+        }
+        precondEntities.push(id);
+      }
+    }
     this._raw = c;
     this._cfg = {
       title: c.title || null,
@@ -162,6 +196,10 @@ class Geely3DCard extends HTMLElement {
       charge_start: chargeOpt('charge_start_entity'),
       charge_stop: chargeOpt('charge_stop_entity'),
       charger_switch: chargeOpt('charger_switch_entity', ['switch']),
+      precond_schedule: chargeOpt('precond_schedule_entity', ['input_datetime']),
+      precond_enabled: chargeOpt('precond_schedule_enabled_entity', ['input_boolean']),
+      precond_settings: chargeOpt('precond_settings_entity', ['input_text']),
+      precond_entities: precondEntities,
     };
     this._sig = null;
     this._prof = null;
@@ -297,7 +335,9 @@ class Geely3DCard extends HTMLElement {
 
   _signature(dark) {
     const p = `.${this._cfg.prefix}_`, clim = this._climateId();
-    const extra = [this._chargeStartId(), this._chargeStopId(), this._locationId()].filter(Boolean);
+    const extra = [this._chargeStartId(), this._chargeStopId(), this._locationId(),
+      this._cfg.precond_schedule, this._cfg.precond_enabled, this._cfg.precond_settings,
+      ...((this._cfg.precond_entities) || [])].filter(Boolean);
     const parts = [this._lang, dark ? 'd' : 'l', Math.floor(Date.now() / 60000)];
     for (const [id, s] of Object.entries(this._hass.states)) {
       if (id.includes(p) || id === clim || extra.includes(id)) parts.push(id, s.state, s.attributes.current_position);
@@ -469,6 +509,51 @@ class Geely3DCard extends HTMLElement {
     .map-canvas { height:min(38vh, 240px); min-height:160px; }
     .map-btn { font-size:12.5px; padding:8px 6px; }
   }
+  .pc-modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:15; backdrop-filter:blur(2px); padding:10px; box-sizing:border-box; }
+  .pc-modal.show { display:flex; }
+  .pc-sheet { background:var(--card-background-color, #1c2230); color:var(--primary-text-color, var(--zc-fg));
+    border-radius:16px; width:min(440px, 100%); max-height:100%; display:flex; flex-direction:column; overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  ha-card.light .pc-sheet { background:#fff; color:#1b2230; }
+  .pc-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px 8px; }
+  .pc-head h2 { margin:0; font-size:17px; font-weight:700; letter-spacing:.2px; }
+  .pc-body { overflow:auto; padding:2px 14px 8px; display:flex; flex-direction:column; gap:12px; -webkit-overflow-scrolling:touch; }
+  .pc-k { font-size:12px; font-weight:600; color:var(--zc-mut); }
+  .pc-step { display:flex; align-items:center; justify-content:center; gap:14px; }
+  .pc-step button { width:40px; height:40px; border:none; border-radius:12px; background:var(--zc-pan2); color:inherit;
+    font:700 20px var(--zc-font); cursor:pointer; line-height:1; }
+  .pc-step button[disabled] { opacity:.35; pointer-events:none; }
+  .pc-temp { font-size:28px; font-weight:700; min-width:4.2ch; text-align:center; font-variant-numeric:tabular-nums; }
+  .pc-chips, .pc-presets { display:flex; flex-wrap:wrap; gap:6px; }
+  .pc-chip { border:none; background:var(--zc-pan2); color:inherit; font:600 12.5px var(--zc-font); padding:7px 12px;
+    border-radius:999px; cursor:pointer; }
+  .pc-chip.sel { background:var(--zc-blue); color:#fff; }
+  .pc-chip.cool.sel { background:var(--zc-teal); }
+  .pc-chip.heat.sel { background:var(--zc-amber); color:#1b1300; }
+  .pc-row { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:34px; }
+  .pc-row .lab { font-size:13px; display:flex; align-items:center; gap:6px; }
+  .pc-row .lab ha-icon { --mdc-icon-size:18px; color:var(--zc-mut); }
+  .pc-tog { width:46px; height:28px; border:none; border-radius:999px; background:var(--zc-pan2); cursor:pointer; position:relative; padding:0; flex:none; }
+  .pc-tog::after { content:''; position:absolute; top:3px; inset-inline-start:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:inset-inline-start .15s, background .15s; }
+  .pc-tog.on { background:var(--zc-blue); }
+  .pc-tog.on::after { inset-inline-start:21px; }
+  .pc-pair { display:flex; flex-direction:column; gap:6px; }
+  .pc-who { font-size:11.5px; color:var(--zc-mut); min-width:3.5em; }
+  .pc-segrow { display:flex; align-items:center; gap:8px; }
+  .pc-note { font-size:11.5px; color:var(--zc-mut); line-height:1.35; }
+  .pc-timewrap { display:flex; align-items:center; gap:8px; flex:1 1 auto; }
+  .pc-timewrap input[type=time] { border:none; border-radius:10px; background:var(--zc-pan2); color:inherit;
+    font:600 14px var(--zc-font); padding:8px 10px; min-width:0; flex:1 1 110px; }
+  .pc-foot { display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px 14px; }
+  .pc-btn { flex:1 1 30%; min-width:96px; text-align:center; border:none; border-radius:10px; padding:10px 8px;
+    font:600 13px var(--zc-font); cursor:pointer; color:inherit; background:var(--zc-pan2); }
+  .pc-btn.now { background:var(--zc-blue); color:#fff; }
+  .pc-btn.stop { background:color-mix(in srgb, var(--zc-red) 18%, transparent); color:var(--zc-red); }
+  .pc-btn[disabled], .pc-btn.hidden { display:none; }
+  @container (max-width: 420px) {
+    .pc-temp { font-size:24px; }
+    .pc-btn { font-size:12.5px; padding:9px 6px; }
+  }
   .box { background:var(--card-background-color, #1c2230); color:var(--primary-text-color, #e8eef8); border-radius:16px; padding:18px; width:min(320px, 86%); box-shadow:0 10px 40px rgba(0,0,0,.5); text-align:center; }
   ha-card.light .box { background:#fff; color:#1b2230; }
   .box p { margin:4px 0 16px; font-size:15px; line-height:1.4; }
@@ -507,6 +592,13 @@ class Geely3DCard extends HTMLElement {
       </div>
     </div>
   </div>
+  <div class="pc-modal" part="pc-modal">
+    <div class="pc-sheet" role="dialog" aria-modal="true">
+      <div class="pc-head"><h2 class="pc-title"></h2><button type="button" class="map-close pc-close" data-act="pc_close" aria-label="">×</button></div>
+      <div class="pc-body"></div>
+      <div class="pc-foot"></div>
+    </div>
+  </div>
   <div class="modal"><div class="box"><p></p><div class="b2"><button class="yes"></button><button class="no"></button></div></div></div>
   <div class="toast"></div>
 </ha-card>`;
@@ -516,7 +608,8 @@ class Geely3DCard extends HTMLElement {
       stats: $('.stats'), det: $('.det'), more: $('.more'), modal: $('.modal'), toast: $('.toast'), stage: $('.stage'),
       hint: $('.hint'), loading: $('.loading'), yes: $('.modal .yes'), no: $('.modal .no'),
       mmap: $('.map-modal'), mapTitle: $('.map-title'), mapClose: $('.map-close'), mapCanvas: $('.map-canvas'),
-      mapZone: $('.map-zone'), mapUpdated: $('.map-updated'), mapNav: $('.map-btn.nav'), mapWaze: $('.map-btn.waze'), mapHonk: $('.map-btn.honk') };
+      mapZone: $('.map-zone'), mapUpdated: $('.map-updated'), mapNav: $('.map-btn.nav'), mapWaze: $('.map-btn.waze'), mapHonk: $('.map-btn.honk'),
+      pcmodal: $('.pc-modal'), pcTitle: $('.pc-title'), pcClose: $('.pc-close'), pcBody: $('.pc-body'), pcFoot: $('.pc-foot') };
     this._applyStatic();
     this._imgs = [...root.querySelectorAll('.frames img')];
     let loaded = 0;
@@ -542,6 +635,7 @@ class Geely3DCard extends HTMLElement {
     this._el.yes.addEventListener('click', () => { const fn = this._pending; this._closeModal(); if (fn) fn(); });
     this._el.modal.addEventListener('click', (e) => { if (e.target === this._el.modal) this._closeModal(); });
     this._el.mmap.addEventListener('click', (e) => { if (e.target === this._el.mmap) this._closeMap(); });
+    this._el.pcmodal.addEventListener('click', (e) => { if (e.target === this._el.pcmodal) this._closePrecond(); });
   }
 
   _applyStatic() {
@@ -637,12 +731,21 @@ class Geely3DCard extends HTMLElement {
         break;
       case 'climate': {
         const s = this._s(clim); if (!s) return;
-        if (s.state === 'off') {
-          const m = (s.attributes.hvac_modes || []).find((x) => x !== 'off') || 'heat_cool';
-          this._svc('climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: m }, 't_clim_on');
-        } else this._svc('climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: 'off' }, 't_clim_off');
+        this._openPrecond();
         break;
       }
+      case 'pc_close': this._closePrecond(); break;
+      case 'pc_temp_up': this._pcNudge(0.5); break;
+      case 'pc_temp_down': this._pcNudge(-0.5); break;
+      case 'pc_mode': this._pcSetMode(d.mode); break;
+      case 'pc_sw': this._pcToggle(d.key); break;
+      case 'pc_sel': this._pcSetSel(d.key, d.opt); break;
+      case 'pc_xsw': this._pcToggleExtra(d.ent); break;
+      case 'pc_xsel': this._pcSetExtra(d.ent, d.opt); break;
+      case 'pc_quick': this._pcQuick(d.quick); break;
+      case 'pc_now': this._pcStartNow(); break;
+      case 'pc_at': this._pcStartAt(); break;
+      case 'pc_stop': this._pcStop(); break;
       case 'charge': {
         const on = this._on(chg);
         this._confirm(this._t(on ? 'c_stop' : 'c_start'), () => this._svc('switch', on ? 'turn_off' : 'turn_on', { entity_id: chg }, on ? 't_stop' : 't_start'));
@@ -695,6 +798,7 @@ class Geely3DCard extends HTMLElement {
   _onEscKey = (e) => {
     if (e.key !== 'Escape') return;
     if (this._el.modal.classList.contains('show')) { this._closeModal(); e.preventDefault(); return; }
+    if (this._el.pcmodal && this._el.pcmodal.classList.contains('show')) { this._closePrecond(); e.preventDefault(); return; }
     if (this._el.mmap.classList.contains('show')) { this._closeMap(); e.preventDefault(); }
   }
   _openMap() {
@@ -728,14 +832,23 @@ class Geely3DCard extends HTMLElement {
       E.mapNav.setAttribute('aria-disabled', 'true');
       E.mapWaze.setAttribute('aria-disabled', 'true');
     }
+    this._closePrecond();
     E.mmap.classList.add('show');
-    if (!this._escBound) { document.addEventListener('keydown', this._onEscKey); this._escBound = true; }
+    this._syncEsc();
     this._fillMap(E.mapCanvas, locId, coords);
   }
   _closeMap() {
     if (this._el && this._el.mmap) this._el.mmap.classList.remove('show');
     if (this._el && this._el.mapCanvas) this._el.mapCanvas.innerHTML = '';
-    if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
+    this._syncEsc();
+  }
+  _syncEsc() {
+    const need = !!(this._el && (
+      (this._el.mmap && this._el.mmap.classList.contains('show')) ||
+      (this._el.pcmodal && this._el.pcmodal.classList.contains('show'))
+    ));
+    if (need && !this._escBound) { document.addEventListener('keydown', this._onEscKey); this._escBound = true; }
+    if (!need && this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
   }
   _honkFromMap() {
     const id = this._id('button', 'find_car');
@@ -772,6 +885,372 @@ class Geely3DCard extends HTMLElement {
       canvas.innerHTML = '';
       canvas.appendChild(card);
     }).catch(() => fallback());
+  }
+
+
+  /* ---------- pre-conditioning ---------- */
+  _pcCanSchedule() { return !!(this._cfg.precond_schedule && this._cfg.precond_enabled); }
+  _pcSuffixes() {
+    return {
+      df: { domain: 'switch', key: 'defrost' },
+      wh: { domain: 'switch', key: 'steering_wheel_heat' },
+      wv: { domain: 'switch', key: 'window_ventilation' },
+      shd: { domain: 'select', key: 'seat_heat_driver' },
+      shp: { domain: 'select', key: 'seat_heat_passenger' },
+      svd: { domain: 'select', key: 'seat_vent_driver' },
+      svp: { domain: 'select', key: 'seat_vent_passenger' },
+    };
+  }
+  _pcIds() {
+    const suf = this._pcSuffixes();
+    const ids = {};
+    for (const [k, s] of Object.entries(suf)) ids[k] = this._id(s.domain, s.key);
+    const extras = [];
+    for (const id of (this._cfg.precond_entities || [])) {
+      let hit = null;
+      for (const [k, s] of Object.entries(suf)) {
+        if (id === ids[k] || id.endsWith(`_${s.key}`)) { hit = k; break; }
+      }
+      if (hit) { ids[hit] = id; continue; }
+      if (this._s(id)) extras.push(id);
+    }
+    const out = { extras };
+    for (const [k, id] of Object.entries(ids)) out[k] = this._s(id) ? id : null;
+    return out;
+  }
+  _pcMinMax() {
+    const s = this._s(this._climateId()), a = (s && s.attributes) || {};
+    let min = Number(a.min_temp), max = Number(a.max_temp);
+    if (!isFinite(min)) min = 15.5;
+    if (!isFinite(max)) max = 28.5;
+    if (min > max) { const t = min; min = max; max = t; }
+    return { min, max };
+  }
+  _pcClamp(t) {
+    const { min, max } = this._pcMinMax();
+    const n = Math.round(Number(t) * 2) / 2;
+    return Math.min(max, Math.max(min, isFinite(n) ? n : 22));
+  }
+  _pcPresets() {
+    const s = this._s(this._climateId());
+    const modes = (s && s.attributes && s.attributes.preset_modes) || [];
+    return modes.filter((m) => m && String(m).toLowerCase() !== 'none');
+  }
+  _pcFindPreset(want) {
+    const w = String(want || '').toLowerCase();
+    return this._pcPresets().find((m) => String(m).toLowerCase() === w) || null;
+  }
+  _pcSelOptions(id) {
+    const s = this._s(id);
+    const opts = (s && s.attributes && s.attributes.options) || ['Off', 'Low', 'Medium', 'High'];
+    return opts.filter((o) => o != null && String(o) !== '');
+  }
+  _pcOffOption(id) {
+    const opts = this._pcSelOptions(id);
+    return opts.find((o) => String(o).toLowerCase() === 'off') || opts[0] || 'Off';
+  }
+  _pcOptLabel(opt) {
+    const k = `opt_${String(opt || '').toLowerCase()}`;
+    const t = this._t(k);
+    return t === k ? String(opt) : t;
+  }
+  _pcDefaultTemp() {
+    const s = this._s(this._climateId()), a = (s && s.attributes) || {};
+    const cur = Number(a.temperature ?? a.target_temp ?? a.target_temperature);
+    return this._pcClamp(isFinite(cur) ? cur : 22);
+  }
+  _pcInitState() {
+    const ids = this._pcIds();
+    const st = { t: this._pcDefaultTemp(), p: null, df: false, wh: false, wv: false, extra: {}, time: '07:00' };
+    for (const k of ['df', 'wh', 'wv']) st[k] = !!(ids[k] && this._on(ids[k]));
+    for (const k of ['shd', 'shp', 'svd', 'svp']) {
+      const id = ids[k];
+      st[k] = id ? (this._v(id) || this._pcOffOption(id)) : this._pcOffOption(id);
+    }
+    for (const id of ids.extras) {
+      const domain = id.split('.')[0];
+      if (domain === 'switch') st.extra[id] = this._on(id);
+      else st.extra[id] = this._v(id) || this._pcOffOption(id);
+    }
+    const timeEnt = this._cfg.precond_schedule;
+    const ts = this._s(timeEnt);
+    const raw = ts && (this._v(timeEnt) || (ts.attributes && ts.attributes.timestamp) || '');
+    const m = String(raw).match(/(\d{1,2}):(\d{2})/);
+    if (m) st.time = `${m[1].padStart(2, '0')}:${m[2]}`;
+    if (this._on(this._cfg.precond_enabled)) {
+      const settings = this._v(this._cfg.precond_settings);
+      if (settings) {
+        const parsed = this._pcParse(settings);
+        if (parsed) Object.assign(st, parsed.partial);
+      }
+    }
+    this._pc = st;
+  }
+  _pcParse(raw) {
+    let o;
+    try { o = JSON.parse(String(raw)); } catch { return null; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    const ids = this._pcIds();
+    const partial = { extra: { ...(this._pc && this._pc.extra) || {} } };
+    if (o.t != null) partial.t = this._pcClamp(o.t);
+    if (o.p) {
+      const found = this._pcFindPreset(o.p);
+      if (found) partial.p = found;
+    } else if (o.p === '' || o.p === null) partial.p = null;
+    for (const k of ['df', 'wh', 'wv']) if (o[k] != null && ids[k]) partial[k] = !!(o[k] && o[k] !== '0' && o[k] !== 0);
+    for (const k of ['shd', 'shp', 'svd', 'svp']) {
+      if (o[k] == null || !ids[k]) continue;
+      const opt = String(o[k]);
+      if (this._pcSelOptions(ids[k]).includes(opt)) partial[k] = opt;
+    }
+    if (Array.isArray(o.e)) {
+      for (const row of o.e) {
+        if (!Array.isArray(row) || row.length < 2) continue;
+        const id = String(row[0]).toLowerCase();
+        if (!entitySafe(id) || !ids.extras.includes(id)) continue;
+        const domain = id.split('.')[0];
+        if (domain === 'switch') partial.extra[id] = !!(row[1] && row[1] !== '0' && row[1] !== 0);
+        else if (this._pcSelOptions(id).includes(String(row[1]))) partial.extra[id] = String(row[1]);
+      }
+    }
+    function entitySafe(id) { return /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/.test(id); }
+    return { partial };
+  }
+  _pcJson() {
+    const st = this._pc, ids = this._pcIds(), o = { t: st.t };
+    if (st.p) o.p = st.p;
+    for (const k of ['df', 'wh', 'wv']) if (ids[k]) o[k] = st[k] ? 1 : 0;
+    for (const k of ['shd', 'shp', 'svd', 'svp']) if (ids[k]) o[k] = st[k];
+    const e = [];
+    for (const id of ids.extras) {
+      const v = st.extra[id];
+      e.push([id, typeof v === 'boolean' ? (v ? 1 : 0) : v]);
+    }
+    if (e.length) o.e = e;
+    return JSON.stringify(o);
+  }
+  _pcSetMode(mode) {
+    if (!this._pc) return;
+    if (!mode || mode === 'auto') this._pc.p = null;
+    else this._pc.p = this._pcFindPreset(mode) || null;
+    this._paintPrecond();
+  }
+  _pcNudge(d) {
+    if (!this._pc) return;
+    this._pc.t = this._pcClamp(this._pc.t + d);
+    this._paintPrecond();
+  }
+  _pcToggle(key) {
+    if (!this._pc || !(key in this._pc)) return;
+    this._pc[key] = !this._pc[key];
+    this._paintPrecond();
+  }
+  _pcSetSel(key, opt) {
+    if (!this._pc || !key) return;
+    this._pc[key] = String(opt);
+    this._paintPrecond();
+  }
+  _pcToggleExtra(ent) {
+    if (!this._pc || !ent) return;
+    this._pc.extra[ent] = !this._pc.extra[ent];
+    this._paintPrecond();
+  }
+  _pcSetExtra(ent, opt) {
+    if (!this._pc || !ent) return;
+    this._pc.extra[ent] = String(opt);
+    this._paintPrecond();
+  }
+  _pcQuick(which) {
+    if (!this._pc) return;
+    const ids = this._pcIds();
+    const mid = (id) => {
+      if (!id) return null;
+      const opts = this._pcSelOptions(id);
+      return opts.find((o) => String(o).toLowerCase() === 'medium') || opts[Math.min(1, opts.length - 1)] || 'Medium';
+    };
+    const off = (id) => this._pcOffOption(id);
+    if (which === 'cool') {
+      this._pc.t = this._pcClamp(20);
+      this._pc.p = this._pcFindPreset('Rapid Cooling');
+      this._pc.df = false; this._pc.wh = false;
+      if (ids.svd) this._pc.svd = mid(ids.svd);
+      if (ids.svp) this._pc.svp = mid(ids.svp);
+      if (ids.shd) this._pc.shd = off(ids.shd);
+      if (ids.shp) this._pc.shp = off(ids.shp);
+    } else if (which === 'heat') {
+      this._pc.t = this._pcClamp(25);
+      this._pc.p = this._pcFindPreset('Rapid Warming');
+      if (ids.df) this._pc.df = true;
+      if (ids.wh) this._pc.wh = true;
+      if (ids.shd) this._pc.shd = mid(ids.shd);
+      if (ids.shp) this._pc.shp = mid(ids.shp);
+      if (ids.svd) this._pc.svd = off(ids.svd);
+      if (ids.svp) this._pc.svp = off(ids.svp);
+    }
+    this._paintPrecond();
+  }
+  _pcReadTime() {
+    const inp = this._el && this._el.pcBody && this._el.pcBody.querySelector('input[type=time]');
+    if (inp && inp.value) {
+      const m = String(inp.value).match(/(\d{1,2}):(\d{2})/);
+      if (m) this._pc.time = `${m[1].padStart(2, '0')}:${m[2]}`;
+    }
+    return (this._pc && this._pc.time) || '07:00';
+  }
+  _openPrecond() {
+    const clim = this._climateId();
+    if (!this._s(clim)) return;
+    this._closeMap();
+    this._pcInitState();
+    this._el.pcTitle.textContent = this._t('pc_title');
+    this._el.pcClose.setAttribute('aria-label', this._t('find_close'));
+    this._paintPrecond();
+    this._el.pcmodal.classList.add('show');
+    this._syncEsc();
+  }
+  _closePrecond() {
+    if (this._el && this._el.pcmodal) this._el.pcmodal.classList.remove('show');
+    this._syncEsc();
+  }
+  _paintPrecond() {
+    if (!this._el || !this._el.pcBody || !this._pc) return;
+    const esc = (t) => this._esc(t);
+    const st = this._pc, ids = this._pcIds(), { min, max } = this._pcMinMax();
+    const tempTxt = Number(st.t).toLocaleString(this._locale, { minimumFractionDigits: st.t % 1 ? 1 : 0, maximumFractionDigits: 1 });
+    const chips = [`<button type="button" class="pc-chip ${st.p ? '' : 'sel'}" data-act="pc_mode" data-mode="auto">${esc(this._t('pc_auto'))}</button>`];
+    for (const [want, key, cls] of [['Rapid Cooling', 'pc_rapid_cool', 'cool'], ['Rapid Warming', 'pc_rapid_warm', 'heat']]) {
+      const mode = this._pcFindPreset(want); if (!mode) continue;
+      chips.push(`<button type="button" class="pc-chip ${cls} ${st.p === mode ? 'sel' : ''}" data-act="pc_mode" data-mode="${esc(mode)}">${esc(this._t(key))}</button>`);
+    }
+    const tog = (key, id, label, icon) => {
+      if (!id) return '';
+      return `<div class="pc-row"><span class="lab"><ha-icon icon="${icon}"></ha-icon>${esc(label)}</span>
+        <button type="button" class="pc-tog ${st[key] ? 'on' : ''}" data-act="pc_sw" data-key="${esc(key)}" aria-pressed="${st[key] ? 'true' : 'false'}"></button></div>`;
+    };
+    const segs = (aKey, bKey, aId, bId, title, icon) => {
+      if (!aId && !bId) return '';
+      const one = (key, id, who) => {
+        if (!id) return '';
+        const opts = this._pcSelOptions(id);
+        return `<div class="pc-segrow"><span class="pc-who">${esc(this._t(who))}</span>
+          <span class="seg" style="--c:var(--zc-blue)">${opts.map((o) =>
+            `<button type="button" class="${st[key] === o ? 'sel' : ''}" data-act="pc_sel" data-key="${esc(key)}" data-opt="${esc(o)}">${esc(this._pcOptLabel(o))}</button>`
+          ).join('')}</span></div>`;
+      };
+      return `<div class="pc-pair"><div class="pc-k"><ha-icon icon="${icon}" style="--mdc-icon-size:16px"></ha-icon> ${esc(title)}</div>${one(aKey, aId, 'pc_driver')}${one(bKey, bId, 'pc_passenger')}</div>`;
+    };
+    const extraRows = ids.extras.map((id) => {
+      const s = this._s(id);
+      const name = esc((s && s.attributes && s.attributes.friendly_name) || id.split('.')[1] || id);
+      const domain = id.split('.')[0];
+      if (domain === 'switch') {
+        const on = !!st.extra[id];
+        return `<div class="pc-row"><span class="lab">${name}</span>
+          <button type="button" class="pc-tog ${on ? 'on' : ''}" data-act="pc_xsw" data-ent="${esc(id)}"></button></div>`;
+      }
+      const opts = this._pcSelOptions(id);
+      return `<div class="pc-pair"><div class="pc-k">${name}</div><div class="pc-segrow"><span class="seg" style="--c:var(--zc-blue)">${opts.map((o) =>
+        `<button type="button" class="${st.extra[id] === o ? 'sel' : ''}" data-act="pc_xsel" data-ent="${esc(id)}" data-opt="${esc(o)}">${esc(this._pcOptLabel(o))}</button>`
+      ).join('')}</span></div></div>`;
+    }).join('');
+    const canAt = this._pcCanSchedule();
+    this._el.pcBody.innerHTML = `
+      <div class="pc-presets">
+        <button type="button" class="pc-chip cool" data-act="pc_quick" data-quick="cool">${esc(this._t('pc_cool'))}</button>
+        <button type="button" class="pc-chip heat" data-act="pc_quick" data-quick="heat">${esc(this._t('pc_heat'))}</button>
+      </div>
+      <div>
+        <div class="pc-k">${esc(this._t('pc_temp'))}</div>
+        <div class="pc-step">
+          <button type="button" data-act="pc_temp_down" ${st.t <= min ? 'disabled' : ''} aria-label="-">−</button>
+          <div class="pc-temp">${esc(tempTxt)}°</div>
+          <button type="button" data-act="pc_temp_up" ${st.t >= max ? 'disabled' : ''} aria-label="+">+</button>
+        </div>
+      </div>
+      <div class="pc-chips">${chips.join('')}</div>
+      ${tog('df', ids.df, this._t('pc_defrost'), 'mdi:car-defrost-front')}
+      ${tog('wh', ids.wh, this._t('pc_wheel'), 'mdi:steering')}
+      ${segs('shd', 'shp', ids.shd, ids.shp, this._t('pc_seat_heat'), 'mdi:car-seat-heater')}
+      ${segs('svd', 'svp', ids.svd, ids.svp, this._t('pc_seat_vent'), 'mdi:car-seat-cooler')}
+      ${tog('wv', ids.wv, this._t('pc_winvent'), 'mdi:window-open')}
+      ${extraRows}
+      <div class="pc-note">${esc(this._t('pc_note'))}</div>
+      ${canAt ? `<div class="pc-row"><span class="lab">${esc(this._t('pc_at'))}</span>
+        <span class="pc-timewrap"><input type="time" value="${esc(st.time)}" aria-label="${esc(this._t('pc_at'))}"></span></div>` : ''}`;
+    const clim = this._s(this._climateId());
+    const climOn = !!(clim && clim.state && clim.state !== 'off' && !GEC_BAD.includes(String(clim.state).toLowerCase()));
+    const foot = [`<button type="button" class="pc-btn now" data-act="pc_now">${esc(this._t('pc_now'))}</button>`];
+    if (canAt) foot.push(`<button type="button" class="pc-btn" data-act="pc_at">${esc(this._t('pc_at'))}</button>`);
+    if (climOn) foot.push(`<button type="button" class="pc-btn stop" data-act="pc_stop">${esc(this._t('pc_stop'))}</button>`);
+    this._el.pcFoot.innerHTML = foot.join('');
+    const inp = this._el.pcBody.querySelector('input[type=time]');
+    if (inp) {
+      const sync = () => this._pcReadTime();
+      inp.addEventListener('change', sync);
+      inp.addEventListener('input', sync);
+    }
+  }
+  _pcCalls() {
+    const st = this._pc, ids = this._pcIds(), clim = this._climateId(), out = [];
+    out.push(['climate', 'set_temperature', { entity_id: clim, temperature: st.t, hvac_mode: 'heat_cool' }]);
+    if (st.p) out.push(['climate', 'set_preset_mode', { entity_id: clim, preset_mode: st.p }]);
+    for (const k of ['df', 'wh', 'wv']) {
+      if (!ids[k]) continue;
+      out.push(['switch', st[k] ? 'turn_on' : 'turn_off', { entity_id: ids[k] }]);
+    }
+    for (const k of ['shd', 'shp', 'svd', 'svp']) {
+      if (!ids[k] || st[k] == null) continue;
+      out.push(['select', 'select_option', { entity_id: ids[k], option: st[k] }]);
+    }
+    for (const id of ids.extras) {
+      const domain = id.split('.')[0], v = st.extra[id];
+      if (domain === 'switch') out.push(['switch', v ? 'turn_on' : 'turn_off', { entity_id: id }]);
+      else if (v != null) out.push(['select', 'select_option', { entity_id: id, option: v }]);
+    }
+    return out;
+  }
+  _pcStopCalls() {
+    const ids = this._pcIds(), clim = this._climateId(), out = [];
+    out.push(['climate', 'set_hvac_mode', { entity_id: clim, hvac_mode: 'off' }]);
+    for (const k of ['df', 'wh', 'wv']) if (ids[k]) out.push(['switch', 'turn_off', { entity_id: ids[k] }]);
+    for (const k of ['shd', 'shp', 'svd', 'svp']) if (ids[k]) out.push(['select', 'select_option', { entity_id: ids[k], option: this._pcOffOption(ids[k]) }]);
+    for (const id of ids.extras) {
+      const domain = id.split('.')[0];
+      if (domain === 'switch') out.push(['switch', 'turn_off', { entity_id: id }]);
+      else out.push(['select', 'select_option', { entity_id: id, option: this._pcOffOption(id) }]);
+    }
+    return out;
+  }
+  _pcRun(calls, msgKey) {
+    const run = (i) => {
+      if (i >= calls.length) { this._toast(this._t(msgKey)); this._closePrecond(); return; }
+      const [d, s, data] = calls[i];
+      this._hass.callService(d, s, data).then(() => run(i + 1), (err) => this._toast(this._t('t_err', { m: (err && err.message) || this._t('t_failed') })));
+    };
+    run(0);
+  }
+  _pcStartNow() {
+    if (!this._pc || !this._s(this._climateId())) return;
+    this._confirm(this._t('c_precond'), () => this._pcRun(this._pcCalls(), 't_clim_on'));
+  }
+  _pcStop() {
+    if (!this._s(this._climateId())) return;
+    this._pcRun(this._pcStopCalls(), 't_clim_off');
+  }
+  _pcStartAt() {
+    if (!this._pcCanSchedule() || !this._pc) return;
+    const time = this._pcReadTime();
+    const m = String(time).match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return;
+    const hhmm = `${m[1].padStart(2, '0')}:${m[2]}`;
+    const json = this._pcJson();
+    if (this._cfg.precond_settings && json.length > 255) { this._toast(this._t('t_pc_json')); return; }
+    const calls = [
+      ['input_datetime', 'set_datetime', { entity_id: this._cfg.precond_schedule, time: `${hhmm}:00` }],
+      ['input_boolean', 'turn_on', { entity_id: this._cfg.precond_enabled }],
+    ];
+    if (this._cfg.precond_settings) calls.push(['input_text', 'set_value', { entity_id: this._cfg.precond_settings, value: json }]);
+    this._pcRun(calls, 't_pc_sched');
   }
 
   _chargeStartId() { return this._cfg.charge_start || this._cfg.charger_switch || null; }

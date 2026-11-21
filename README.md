@@ -27,7 +27,7 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
 - Service warning chip (days or km to service)
 - Tire pressures in **bar** by default (or `psi` / `kPa` via `tire_unit`) on a small top-view diagram, low pressure highlighted (sensors in psi / kPa / bar are converted automatically)
 - Cabin and outside temperature
-- Quick actions: pre-conditioning on/off, start/stop charging (with confirmation), find car (opens a map with the car's location, or honk & flash), refresh data
+- Quick actions: pre-conditioning panel (temperature, Rapid Cooling / Rapid Warming, seats, defrost, optional scheduled start), start/stop charging (with confirmation), find car (opens a map with the car's location, or honk & flash), refresh data
 - Expandable details: seat heating & ventilation (front and rear, where the car has them), windows, sunroof, sunshade, defrost, unlock trunk, unlock **frunk** (EX2 / E2)
 - Every block hides itself when the car does not have the entities – so trims without a sunroof or ventilated seats, and unknown models, just work
 - Tap any value to open the entity's more-info dialog
@@ -136,6 +136,10 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `charger_switch_entity` | string | – | Optional. A single `switch` used for both start (`turn_on`) and stop (`turn_off`). Used for a side if the matching start/stop entity is not set |
 | `location_entity` | string | auto-detected | Optional. Location entity used by the map (`device_tracker.<prefix>_location` is used if it exists) |
 | `find_action` | string | `map` if a location entity exists, otherwise `honk` | `map` opens the in-card map; `honk` presses `button.<prefix>_find_car` as before |
+| `precond_entities` | list | auto-detected | Optional extra `switch` / `select` entities to show in the pre-conditioning panel. Auto-detected controls (`defrost`, `steering_wheel_heat`, `window_ventilation`, `seat_heat_*`, `seat_vent_*`) that do not exist are hidden. An entry that matches one of those suffixes overrides the auto-detected entity |
+| `precond_schedule_entity` | string | – | Optional `input_datetime` (time only). Together with `precond_schedule_enabled_entity`, enables **Start at** in the panel |
+| `precond_schedule_enabled_entity` | string | – | Optional `input_boolean` that arms the scheduled start |
+| `precond_settings_entity` | string | – | Optional `input_text` (max 255) where the panel stores a compact JSON of the chosen settings for a scheduled start |
 
 ### Example
 
@@ -189,13 +193,175 @@ entity_prefix: my_geely_ex5_1234
 # find_action: honk   # to keep horn & lights only
 ```
 
+### Pre-conditioning
+
+Tapping **Pre-condition** opens an in-card panel instead of immediately toggling the climate entity. You can set the target temperature (0.5° steps, within the climate entity's min/max), pick **Auto** or a Rapid Cooling / Rapid Warming preset when the car exposes them, and toggle defrost, steering-wheel heat, window ventilation, and seat heat / ventilation (Off / Low / Medium / High). Controls are auto-detected from `entity_prefix` and hidden when the entity does not exist. Use `precond_entities` to add or override extra `switch` or `select` entities.
+
+Quick presets (**Cool** / **Heat**, or **קירור** / **חימום** in Hebrew) only prefill the form:
+
+- Cool: 20°, Rapid Cooling, seat ventilation Medium
+- Heat: 25°, Rapid Warming, seat heating Medium, steering-wheel heat, defrost
+
+**Start now** asks for confirmation (it starts the car's climate remotely), then calls `climate.set_temperature` with `hvac_mode: heat_cool`, `climate.set_preset_mode` if a rapid preset is selected, and finally the chosen switches and selects. If the climate is already on, a **Stop** button turns HVAC off and clears the accessories the panel controls. The panel notes that the car turns the climate off on its own after its built-in time.
+
+The card cannot fire a delayed start while it is closed, so a scheduled start needs helpers on the Home Assistant side. Configure an `input_datetime` (time only), an `input_boolean`, and optionally an `input_text` (max 255 characters) as shown below. **Start at** then writes the next occurrence's time, turns the boolean on, and stores compact JSON in the text helper (`t`, `p`, `df`, `wh`, `wv`, `shd`, `shp`, `svd`, `svp`, plus `e` for extras). If those helpers are not configured, **Start at** is hidden.
+
+```yaml
+type: custom:geely-3d-card
+entity_prefix: my_geely_ex5_1234
+precond_schedule_entity: input_datetime.geely_precond_time
+precond_schedule_enabled_entity: input_boolean.geely_precond_scheduled
+precond_settings_entity: input_text.geely_precond_settings
+# precond_entities:
+#   - switch.my_extra_climate_accessory
+```
+
+Example helpers (Helpers in the UI, or YAML):
+
+```yaml
+input_datetime:
+  geely_precond_time:
+    name: Geely pre-conditioning time
+    has_date: false
+    has_time: true
+
+input_boolean:
+  geely_precond_scheduled:
+    name: Geely pre-conditioning scheduled
+
+input_text:
+  geely_precond_settings:
+    name: Geely pre-conditioning settings
+    max: 255
+```
+
+Sample automation. It runs at the helper time only if the boolean is on, validates the JSON before applying it, then turns the boolean off. Replace the climate / switch / select entity ids with yours. Mode is `single`.
+
+```yaml
+alias: Geely pre-conditioning schedule
+id: geely_precond_schedule
+mode: single
+trigger:
+  - platform: time
+    at: input_datetime.geely_precond_time
+condition:
+  - condition: state
+    entity_id: input_boolean.geely_precond_scheduled
+    state: "on"
+action:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.geely_precond_scheduled
+  - variables:
+      raw: "{{ states('input_text.geely_precond_settings') }}"
+      cfg: "{{ raw | from_json(default=none) }}"
+  - condition: template
+    value_template: "{{ cfg is mapping and cfg.t is number }}"
+  - action: climate.set_temperature
+    target:
+      entity_id: climate.my_geely_ex5_1234_climate
+    data:
+      temperature: "{{ cfg.t }}"
+      hvac_mode: heat_cool
+  - if:
+      - condition: template
+        value_template: "{{ cfg.p is string and cfg.p not in ['', 'none', 'auto'] }}"
+    then:
+      - action: climate.set_preset_mode
+        target:
+          entity_id: climate.my_geely_ex5_1234_climate
+        data:
+          preset_mode: "{{ cfg.p }}"
+  - if:
+      - condition: template
+        value_template: "{{ cfg.df is defined }}"
+    then:
+      - action: "switch.turn_{{ 'on' if cfg.df else 'off' }}"
+        target:
+          entity_id: switch.my_geely_ex5_1234_defrost
+  - if:
+      - condition: template
+        value_template: "{{ cfg.wh is defined }}"
+    then:
+      - action: "switch.turn_{{ 'on' if cfg.wh else 'off' }}"
+        target:
+          entity_id: switch.my_geely_ex5_1234_steering_wheel_heat
+  - if:
+      - condition: template
+        value_template: "{{ cfg.wv is defined }}"
+    then:
+      - action: "switch.turn_{{ 'on' if cfg.wv else 'off' }}"
+        target:
+          entity_id: switch.my_geely_ex5_1234_window_ventilation
+  - if:
+      - condition: template
+        value_template: "{{ cfg.shd is string }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: select.my_geely_ex5_1234_seat_heat_driver
+        data:
+          option: "{{ cfg.shd }}"
+  - if:
+      - condition: template
+        value_template: "{{ cfg.shp is string }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: select.my_geely_ex5_1234_seat_heat_passenger
+        data:
+          option: "{{ cfg.shp }}"
+  - if:
+      - condition: template
+        value_template: "{{ cfg.svd is string }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: select.my_geely_ex5_1234_seat_vent_driver
+        data:
+          option: "{{ cfg.svd }}"
+  - if:
+      - condition: template
+        value_template: "{{ cfg.svp is string }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: select.my_geely_ex5_1234_seat_vent_passenger
+        data:
+          option: "{{ cfg.svp }}"
+  - repeat:
+      for_each: "{{ cfg.e if cfg.e is list else [] }}"
+      sequence:
+        - variables:
+            eid: "{{ repeat.item[0] }}"
+            val: "{{ repeat.item[1] }}"
+        - if:
+            - condition: template
+              value_template: "{{ eid is string and eid.split('.')[0] == 'switch' }}"
+          then:
+            - action: "switch.turn_{{ 'on' if val else 'off' }}"
+              target:
+                entity_id: "{{ eid }}"
+        - if:
+            - condition: template
+              value_template: "{{ eid is string and eid.split('.')[0] == 'select' and val is string }}"
+          then:
+            - action: select.select_option
+              target:
+                entity_id: "{{ eid }}"
+              data:
+                option: "{{ val }}"
+```
+
+If `from_json` cannot parse the helper (invalid or empty JSON), the `cfg.t is number` condition fails and nothing is sent to the car.
+
 ### Entities used
 
 All are `<domain>.<entity_prefix>_<key>`. Missing entities are simply hidden.
 
 - `sensor`: `battery`, `electric_range`, `range_at_full_charge`, `charger_connection`, `charging_power`, `time_to_full_charge`, `interior_temperature`, `exterior_temperature`, `tire_pressure_fl/fr/rl/rr`, `days_to_service`, `distance_to_service`, `total_mileage`, `average_consumption`, `last_trip`, `engine_state`, `last_updated`, `car_reported_at`; PHEV: `fuel_level`, `fuel_level_percent`, `fuel_range`, `combined_range`
 - `binary_sensor`: `connected`, `charger_plug`, `door_driver`, `door_passenger`, `door_rear_left`, `door_rear_right`, `trunk`, `hood`; PHEV: `fuel_flap`
-- `lock.…_doors`, `switch.…_charging`, `switch.…_defrost`, `cover.…_all_windows`, `cover.…_sunroof`, `cover.…_sunshade`, `select.…_seat_heat_*` / `select.…_seat_vent_*` (driver, passenger, rear_left, rear_right), `button.…_find_car`, `button.…_refresh_data`, `button.…_unlock_trunk`, `button.…_unlock_frunk`, `device_tracker.…_location`, and the climate entity
+- `lock.…_doors`, `switch.…_charging`, `switch.…_defrost`, `switch.…_steering_wheel_heat`, `switch.…_window_ventilation`, `cover.…_all_windows`, `cover.…_sunroof`, `cover.…_sunshade`, `select.…_seat_heat_*` / `select.…_seat_vent_*` (driver, passenger, rear_left, rear_right), `button.…_find_car`, `button.…_refresh_data`, `button.…_unlock_trunk`, `button.…_unlock_frunk`, `device_tracker.…_location`, and the climate entity
 
 ## Screenshots
 
@@ -230,6 +396,7 @@ EX5 – Hebrew (RTL), desktop:
 - כרטיס לא רשמי, ללא קשר ל-Geely.
 - אופציונלי: אם יש לכם עמדת טעינה ב-Home Assistant, אפשר להוסיף כפתורי התחל/עצור טעינה עם `charge_start_entity` ו-`charge_stop_entity`, או מתג אחד עם `charger_switch_entity`.
 - כפתור «מצא רכב» פותח מפה עם מיקום הרכב (אפשר להשאיר את ההתנהגות הישנה עם `find_action: honk`).
+- כפתור «מיזוג מראש» פותח לוח להגדרת טמפרטורה, קירור/חימום מהיר, מושבים והפשרה, עם «הפעל עכשיו» (אחרי אישור) או «הפעל בשעה» אם הוגדרו עוזרי תזמון.
 
 ```yaml
 type: custom:geely-3d-card
@@ -238,6 +405,10 @@ language: he
 ```
 
 ## Changelog
+
+### 1.7.0
+- The Pre-condition action opens an in-card panel: temperature stepper, Auto / Rapid Cooling / Rapid Warming, defrost, steering-wheel heat, window ventilation, and seat heat / ventilation. Cool and Heat chips prefill the form. **Start now** confirms, then applies `climate.set_temperature` (`hvac_mode: heat_cool`), an optional preset, and the chosen accessories. **Stop** appears when the climate is already on.
+- Optional scheduled start via `precond_schedule_entity`, `precond_schedule_enabled_entity` and `precond_settings_entity`. A sample automation in this README reads the compact JSON at the chosen time (after validating it) and turns the schedule off. Extra accessories can be added with `precond_entities`.
 
 ### 1.6.0
 - Find car can open an in-card map with a pin at the car, plus Navigate, Waze, and optional Honk & flash (with confirmation). Default is the map when `device_tracker.<prefix>_location` (or `location_entity`) is available; `find_action: honk` keeps the previous behaviour. If no location entity exists, the button still honks as before.
