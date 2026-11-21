@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.8.0';
+const GEC_VERSION = '1.8.1';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -1985,6 +1985,8 @@ class Geely3DCard extends HTMLElement {
 }
 
 
+const GEC_EDITOR_SHOW_CHARGER_SWITCH = true;
+
 const GEC_COLOR_SWATCH = {
   silver: '#c5c9d0', grey: '#6d7178', gray: '#6d7178', green: '#1f6a42',
   black: '#1c1c1c', white: '#f5f5f5',
@@ -1992,6 +1994,81 @@ const GEC_COLOR_SWATCH = {
   'nebula-beige': '#d9cbb8', 'nova-pink': '#e8b4c4', 'star-silver': '#c8ccd2',
   'alpine-white': '#f7f7f7', 'cloudveil-silver': '#c4c8ce', 'glacier-blue': '#6a8aa8',
   'jungle-green': '#2d5a3a', 'polar-black': '#161616', 'volcanic-grey': '#5a5d62',
+};
+
+const GEC_EDITOR_I18N = {
+  en: {
+    entity_prefix: 'Entity prefix',
+    climate_entity: 'Climate entity (optional)',
+    language: 'Language',
+    model: 'Model',
+    color: 'Paint color',
+    image_source: 'Car images',
+    image_base: 'Local image folder',
+    tire_unit: 'Tire pressure unit',
+    charge_start_entity: 'Charge start entity',
+    charge_stop_entity: 'Charge stop entity',
+    charger_switch_entity: 'Charger switch (optional)',
+    find_action: 'Find-car action',
+    map_marker: 'Map marker',
+    time_format: 'Time format',
+    precond: 'Pre-conditioning',
+    precond_schedule_entity: 'Schedule time helper',
+    precond_schedule_enabled_entity: 'Schedule enabled helper',
+    precond_settings_entity: 'Pre-conditioning settings helper',
+    opt_auto: 'Auto',
+    opt_model_auto: 'Auto (detect from entities)',
+    opt_generic: 'Generic',
+    opt_img_auto: 'Automatic (local, then Geely if missing)',
+    opt_img_geely: 'Geely (online images)',
+    opt_img_local: 'Local files',
+    opt_find_default: 'Default',
+    opt_find_map: 'Map',
+    opt_find_honk: 'Honk & flash',
+    opt_marker_default: 'Default (car)',
+    opt_marker_car: 'Car',
+    opt_marker_ha: 'Home Assistant default',
+    opt_time_default: 'Default',
+    opt_time_24: '24-hour',
+    opt_time_12: '12-hour',
+    opt_tire_default: 'Default (bar)',
+  },
+  he: {
+    entity_prefix: 'קידומת ישויות',
+    climate_entity: 'ישות מיזוג (רשות)',
+    language: 'שפה',
+    model: 'דגם',
+    color: 'צבע',
+    image_source: 'תמונות הרכב',
+    image_base: 'תיקיית תמונות מקומית',
+    tire_unit: 'יחידת לחץ צמיגים',
+    charge_start_entity: 'התחל טעינה',
+    charge_stop_entity: 'הפסק טעינה',
+    charger_switch_entity: 'מתג מטען (רשות)',
+    find_action: 'פעולת מצא רכב',
+    map_marker: 'סיכת מפה',
+    time_format: 'פורמט שעה',
+    precond: 'מיזוג מראש',
+    precond_schedule_entity: 'עוזר שעת הפעלה',
+    precond_schedule_enabled_entity: 'עוזר הפעלת לוח זמנים',
+    precond_settings_entity: 'עוזר הגדרות מיזוג מראש',
+    opt_auto: 'אוטומטי',
+    opt_model_auto: 'אוטומטי (זיהוי לפי ישויות)',
+    opt_generic: 'כללי',
+    opt_img_auto: 'אוטומטי (מקומי, ואז Geely אם חסר)',
+    opt_img_geely: 'Geely (תמונות מקוונות)',
+    opt_img_local: 'קבצים מקומיים',
+    opt_find_default: 'ברירת מחדל',
+    opt_find_map: 'מפה',
+    opt_find_honk: 'צפירה והבהוב',
+    opt_marker_default: 'ברירת מחדל (הרכב)',
+    opt_marker_car: 'הרכב',
+    opt_marker_ha: 'ברירת מחדל של Home Assistant',
+    opt_time_default: 'ברירת מחדל',
+    opt_time_24: '24 שעות',
+    opt_time_12: '12 שעות',
+    opt_tire_default: 'ברירת מחדל (bar)',
+  },
 };
 
 class Geely3DCardEditor extends HTMLElement {
@@ -2005,6 +2082,14 @@ class Geely3DCardEditor extends HTMLElement {
     this._config = { ...(config || {}) };
     this._render();
   }
+  _he() {
+    const lang = String((this._hass && this._hass.language) || '').toLowerCase();
+    return lang === 'he' || lang === 'iw' || lang.startsWith('he-');
+  }
+  _t(key) {
+    const pack = GEC_EDITOR_I18N[this._he() ? 'he' : 'en'];
+    return pack[key] || GEC_EDITOR_I18N.en[key] || key;
+  }
   _modelKey() {
     return String(this._config.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_') || 'auto';
   }
@@ -2012,59 +2097,163 @@ class Geely3DCardEditor extends HTMLElement {
     const colors = model === 'auto'
       ? [...new Set(Object.keys(GEC_CDN).flatMap((k) => GEC_cdnColors(k)))]
       : GEC_cdnColors(model);
-    return colors.map((c) => ({ value: c, label: GEC_colorLabel(c) }));
+    const opts = colors.map((c) => ({ value: c, label: GEC_colorLabel(c) }));
+    opts.unshift({ value: '', label: '—' });
+    return opts;
+  }
+  _showImageBase() {
+    const src = String(this._config.image_source || '').toLowerCase();
+    return src !== 'geely';
+  }
+  _isGeelySource(cfg) {
+    return String((cfg || this._config).image_source || '').toLowerCase() === 'geely';
   }
   _schema() {
+    const t = (k) => this._t(k);
     const colors = this._colorOptions(this._modelKey());
-    return [
+    const chargeSel = { entity: { domain: ['button', 'switch', 'script', 'input_button'], filter: { domain: ['button', 'switch', 'script', 'input_button'] } } };
+    const schema = [
       { name: 'entity_prefix', required: true, selector: { text: {} } },
       { name: 'climate_entity', selector: { entity: { domain: 'climate' } } },
+      { name: 'language', selector: { select: { mode: 'dropdown', options: [
+        { value: 'auto', label: t('opt_auto') },
+        { value: 'en', label: 'English' },
+        { value: 'he', label: 'עברית' },
+      ] } } },
       { name: 'model', selector: { select: { mode: 'dropdown', options: [
-        { value: 'auto', label: 'Auto (detect from entities)' },
+        { value: 'auto', label: t('opt_model_auto') },
         { value: 'ex5', label: 'EX5' },
         { value: 'e5', label: 'E5' },
         { value: 'ex2', label: 'EX2' },
         { value: 'starray_emi', label: 'Starray EM-i' },
-        { value: 'generic', label: 'Generic' },
+        { value: 'generic', label: t('opt_generic') },
       ] } } },
       { name: 'color', selector: { select: { mode: 'dropdown', options: colors } } },
       { name: 'image_source', selector: { select: { mode: 'dropdown', options: [
-        { value: '', label: 'Automatic (local, then Geely if missing)' },
-        { value: 'geely', label: 'Geely (online images)' },
-        { value: 'local', label: 'Local files' },
+        { value: '', label: t('opt_img_auto') },
+        { value: 'geely', label: t('opt_img_geely') },
+        { value: 'local', label: t('opt_img_local') },
       ] } } },
     ];
+    if (this._showImageBase()) {
+      schema.push({ name: 'image_base', selector: { text: {} } });
+    }
+    schema.push(
+      { name: 'tire_unit', selector: { select: { mode: 'dropdown', options: [
+        { value: '', label: t('opt_tire_default') },
+        { value: 'bar', label: 'bar' },
+        { value: 'psi', label: 'psi' },
+        { value: 'kpa', label: 'kPa' },
+      ] } } },
+      { name: 'charge_start_entity', selector: chargeSel },
+      { name: 'charge_stop_entity', selector: chargeSel },
+    );
+    if (typeof GEC_EDITOR_SHOW_CHARGER_SWITCH !== 'undefined' ? GEC_EDITOR_SHOW_CHARGER_SWITCH : true) {
+      schema.push({ name: 'charger_switch_entity', selector: { entity: { domain: 'switch', filter: { domain: 'switch' } } } });
+    }
+    schema.push(
+      { name: 'find_action', selector: { select: { mode: 'dropdown', options: [
+        { value: '', label: t('opt_find_default') },
+        { value: 'map', label: t('opt_find_map') },
+        { value: 'honk', label: t('opt_find_honk') },
+      ] } } },
+      { name: 'map_marker', selector: { select: { mode: 'dropdown', options: [
+        { value: '', label: t('opt_marker_default') },
+        { value: 'car', label: t('opt_marker_car') },
+        { value: 'default', label: t('opt_marker_ha') },
+      ] } } },
+      { name: 'time_format', selector: { select: { mode: 'dropdown', options: [
+        { value: '', label: t('opt_time_default') },
+        { value: '24h', label: t('opt_time_24') },
+        { value: '12h', label: t('opt_time_12') },
+      ] } } },
+      { type: 'expandable', title: t('precond'), expanded: false, schema: [
+        { name: 'precond_schedule_entity', selector: { entity: { domain: 'input_datetime' } } },
+        { name: 'precond_schedule_enabled_entity', selector: { entity: { domain: 'input_boolean' } } },
+        { name: 'precond_settings_entity', selector: { entity: { domain: 'input_text' } } },
+      ] },
+    );
+    return schema;
   }
-  _labels() {
-    return {
-      entity_prefix: 'Entity prefix',
-      climate_entity: 'Climate entity (optional)',
-      model: 'Model',
-      color: 'Paint color',
-      image_source: 'Car images',
-    };
+  _fieldNames(schema) {
+    const names = [];
+    for (const s of (schema || this._schema())) {
+      if (s && s.type === 'expandable' && s.schema) names.push(...this._fieldNames(s.schema));
+      else if (s && s.name) names.push(s.name);
+    }
+    return names;
   }
-  _onChange(value) {
+  _empty(v) { return v == null || v === ''; }
+  _deepEqual(a, b) {
+    if (a === b) return true;
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      if (Array.isArray(a) || Array.isArray(b)) {
+        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+        return a.every((v, i) => this._deepEqual(v, b[i]));
+      }
+      const ak = Object.keys(a), bk = Object.keys(b);
+      if (ak.length !== bk.length) return false;
+      return ak.every((k) => Object.prototype.hasOwnProperty.call(b, k) && this._deepEqual(a[k], b[k]));
+    }
+    return false;
+  }
+  _formData() {
+    const d = { ...this._config };
+    if (!('image_source' in d)) d.image_source = '';
+    if (!('model' in d)) d.model = 'auto';
+    if (!('language' in d)) d.language = 'auto';
+    if (!('find_action' in d)) d.find_action = '';
+    if (!('map_marker' in d)) d.map_marker = '';
+    if (!('time_format' in d)) d.time_format = '';
+    if (!('tire_unit' in d)) d.tire_unit = '';
+    return d;
+  }
+  _commit(value) {
     const prev = this._config || {};
-    const next = { ...prev, ...value };
+    const next = { ...prev };
+    const fields = this._fieldNames();
+    const omitValues = {
+      image_source: [''], model: ['', 'auto'], language: ['', 'auto'],
+      find_action: [''], map_marker: [''], time_format: [''], tire_unit: [''],
+    };
+    for (const key of fields) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      let v = value[key];
+      if (v == null) v = '';
+      if (typeof v === 'string') v = v.trim();
+      const had = Object.prototype.hasOwnProperty.call(prev, key);
+      const omits = omitValues[key] || [''];
+      const isOmit = omits.includes(v);
+      if (isOmit) {
+        if (!had) continue;
+        if (prev[key] === v || omits.includes(String(prev[key]))) continue;
+        if (v === '') delete next[key];
+        else next[key] = v;
+        continue;
+      }
+      if (had && prev[key] === v) continue;
+      next[key] = v;
+    }
     const norm = (v) => String(v || 'auto').toLowerCase().replace(/[\s-]+/g, '_');
-    if (norm(next.model) !== norm(prev.model)) {
+    if (norm(next.model) !== norm(prev.model) && this._isGeelySource({ ...prev, ...next })) {
       const def = GEC_cdnDefault(norm(next.model));
       if (def) next.color = def;
       else if (norm(next.model) === 'generic') delete next.color;
     }
-    if (next.image_source === '' || next.image_source === 'auto') delete next.image_source;
+    if (this._deepEqual(next, prev)) return prev;
     this._config = next;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next }, bubbles: true, composed: true }));
     this._render();
+    return next;
   }
+  _onChange(value) { return this._commit(value || {}); }
   _esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
   _render() {
     const root = this.shadowRoot;
-    const labels = this._labels();
-    const data = { ...this._config };
-    if (data.image_source == null) data.image_source = '';
-    if (data.model == null) data.model = 'auto';
+    const he = this._he();
+    this.setAttribute('dir', he ? 'rtl' : 'ltr');
+    const labels = GEC_EDITOR_I18N[he ? 'he' : 'en'];
+    const data = this._formData();
     const schema = this._schema();
     const color = data.color;
     const swatch = color && GEC_COLOR_SWATCH[color];
@@ -2073,7 +2262,12 @@ class Geely3DCardEditor extends HTMLElement {
       .swatch{width:18px;height:18px;border-radius:50%;border:1px solid rgba(127,127,127,.45);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);flex:0 0 auto}
       .fallback{display:grid;gap:12px;font:14px var(--mdc-typography-body2-font-family,sans-serif);color:var(--primary-text-color,#212121)}
       .fallback label{display:flex;flex-direction:column;gap:4px;font-weight:500}
-      .fallback input,.fallback select{font:inherit;padding:8px 10px;border-radius:6px;border:1px solid var(--divider-color,#c4c4c4);background:var(--card-background-color,#fff);color:inherit}`;
+      .fallback input,.fallback select{font:inherit;padding:8px 10px;border-radius:6px;border:1px solid var(--divider-color,#c4c4c4);background:var(--card-background-color,#fff);color:inherit}
+      .fallback details{border:1px solid var(--divider-color,#c4c4c4);border-radius:8px;padding:8px 10px}
+      .fallback details>summary{cursor:pointer;font-weight:600;margin-bottom:8px}
+      :host([dir="rtl"]) .fallback label,:host([dir="rtl"]) .swatch-row{text-align:right}
+      .fallback input{direction:ltr;unicode-bidi:isolate;text-align:left}`;
+    const computeLabel = (s) => (s && (labels[s.name] || s.title || s.name)) || '';
     if (customElements.get('ha-form')) {
       if (!this._form) {
         root.innerHTML = `<style>${style}</style><div class="swatch-row"${swatch ? '' : ' hidden'}><span class="swatch"></span><span class="swatch-name"></span></div>`;
@@ -2093,11 +2287,11 @@ class Geely3DCardEditor extends HTMLElement {
       this._form.hass = this._hass;
       this._form.data = data;
       this._form.schema = schema;
-      this._form.computeLabel = (s) => labels[s.name] || s.name;
+      this._form.computeLabel = computeLabel;
       return;
     }
-    const fields = schema.map((s) => {
-      const lab = labels[s.name] || s.name;
+    const fieldHtml = (s) => {
+      const lab = computeLabel(s);
       const val = data[s.name] == null ? '' : data[s.name];
       if (s.selector && s.selector.select) {
         const opts = s.selector.select.options.map((o) => {
@@ -2108,11 +2302,20 @@ class Geely3DCardEditor extends HTMLElement {
         return `<label>${this._esc(lab)}<select name="${this._esc(s.name)}">${opts}</select></label>`;
       }
       return `<label>${this._esc(lab)}<input name="${this._esc(s.name)}" value="${this._esc(val)}"></label>`;
-    }).join('');
+    };
+    const parts = [];
+    for (const s of schema) {
+      if (s.type === 'expandable') {
+        const inner = (s.schema || []).map(fieldHtml).join('');
+        parts.push(`<details class="exp"${s.expanded ? ' open' : ''}><summary>${this._esc(s.title || '')}</summary>${inner}</details>`);
+      } else {
+        parts.push(fieldHtml(s));
+      }
+    }
     const sw = swatch ? `<div class="swatch-row"><span class="swatch" style="background:${this._esc(swatch)}"></span><span class="swatch-name">${this._esc(GEC_colorLabel(color || ''))}</span></div>` : '';
-    root.innerHTML = `<style>${style}</style>${sw}<form class="fallback">${fields}</form>`;
+    root.innerHTML = `<style>${style}</style>${sw}<form class="fallback">${parts.join('')}</form>`;
     const form = root.querySelector('form');
-    form.addEventListener('change', (ev) => {
+    form.addEventListener('change', () => {
       const fd = {};
       for (const el of form.elements) if (el.name) fd[el.name] = el.value;
       this._onChange(fd);
@@ -2121,7 +2324,6 @@ class Geely3DCardEditor extends HTMLElement {
 }
 
 if (!customElements.get('geely-3d-card-editor')) customElements.define('geely-3d-card-editor', Geely3DCardEditor);
-
 
 if (!customElements.get('geely-3d-card')) customElements.define('geely-3d-card', Geely3DCard);
 if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', class extends Geely3DCard {});   // old name (v1.0-1.2)

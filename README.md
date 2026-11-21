@@ -506,6 +506,10 @@ language: he
 
 ## Changelog
 
+### 1.8.1
+- The visual editor now includes language, tire unit, charge start/stop, find-car action, map marker, time format, and pre-conditioning helper entities (in an expandable section), plus `image_base` when using local images. Labels are Hebrew when Home Assistant's language is Hebrew.
+- Saving the editor without changes no longer injects defaults or drops unknown keys. Changing the model resets the paint color only in Geely image mode, and never touches `image_base`.
+
 ### 1.8.0
 - Pick a **model** and **paint color** in a new visual editor (`ha-form`). With `image_source: geely` (the default for cards added from the UI), 360° frames load from Geely's public HTTPS asset URLs — no download script required. The images are hotlinked, not redistributed.
 - `image_source: local` keeps the previous `/local/geely-ex5/...` (or `image_base`) behaviour. YAML without `image_source` still tries local files first and, if frame 1 is missing, automatically falls back to Geely's URLs (with a console note).
