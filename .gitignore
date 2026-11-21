@@ -1,5 +1,5 @@
 # Car images are copyrighted by Geely - fetch them locally with scripts/fetch-images.sh
-images/
+/images/
 *.png
 *.webp
 !docs/**/*.png
