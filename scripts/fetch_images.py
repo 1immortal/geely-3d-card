@@ -34,6 +34,8 @@ import urllib.request
 UA = {"User-Agent": "Mozilla/5.0 (geely-3d-card image fetcher)"}
 OUT_W, OUT_H = 900, 456
 
+# Keep GEC_CDN in geely-3d-card.js in sync with these templates, colour lists and defaults
+# (ex2 / starray_emi colours are scraped at runtime; the card embeds the first complete 24-frame set).
 MODELS = {
     "ex5": {
         "name": "Geely EX5", "source": "geely.com", "transparent": True,

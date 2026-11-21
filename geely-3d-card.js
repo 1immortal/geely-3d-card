@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.7.4';
+const GEC_VERSION = '1.8.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -22,6 +22,74 @@ const GEC_MODELS = {
     match: /starray|p145/i },
   generic: { name: 'Geely', drive: 'auto', frames: 1, start: 1, direction: 1, color: null, ext: 'webp', studio: null, match: null },
 };
+
+/* Public 360° frame URLs used when image_source is 'geely'.
+ * Patterns and colour lists match scripts/fetch_images.py (EX5, E5 templates; EX2 / Starray
+ * lists are the first complete 24-frame set from the same Geely Australia configurator pages
+ * the fetch script parses). These URLs are hotlinked, not redistributed. */
+const GEC_CDN = {
+  ex5: {
+    default: 'silver', first: 1, pad: 0, ext: 'png',
+    colors: ['silver', 'grey', 'green', 'black', 'white'],
+    url: 'https://www.geely.com/-/media/project/web-portal/models/ex5/model-colors/new/{c}/ex5-{c}---{n}.png',
+  },
+  e5: {
+    default: 'silver', first: 0, pad: 2, ext: 'jpg',
+    colors: ['silver', 'gray', 'white', 'black', 'green'],
+    url: 'https://assets.geelyauto.eu/__frames__/exterior/geely-e5/lhd/23f/{c}/{n}.jpg',
+  },
+  ex2: {
+    default: "star-silver", host: 'https://a-ap.storyblok.com/f/3000753/4431x2954/',
+    colors: {
+      "aurora-green": { f: "ex2_complete_aurora-green_360_{n}.jpg", h: ["22d02906df","8bb5f2bb75","c57c37fb3e","f817efa3b0","8ed1573b76","333da72d92","9b0ca3f310","1b42978364","52f28fc679","294b749613","85247419cb","813731bd26","d7b685d5e7","a3d1555a54","0a7a2ac27a","aa89e391b1","8ce737bdaf","6311826b3c","06348bf31b","9f64c2cb79","3e2abbd8a7","792631d2f8","58df9c5fca","6fcdf621d6"] },
+      "comet-grey": { f: "ex2_complete_comet-gray_360_{n}.jpg", h: ["fa346ce164","58c55241fc","2126271b59","c6f8474820","0e9eba6ba9","3504d47243","1d93559e97","79c1c50822","a25909de33","36753fc5b4","a65ddec4e2","60489c2f9f","b8f6a38221","74dba136e7","ddcb08632c","2d00bd98b0","14fa0a1a6d","bbb0f4c999","e63cbc58bb","5c236b6ad8","3e3226962e","1f61244f60","ba7cce9f34","45a99b1ed1"] },
+      "moon-white": { f: "ex2_complete_moon-white_360_{n}.jpg", h: ["51c16730ef","73ae41b061","786cc8e29f","f76bad8329","5c99d7084f","bd13dad88d","ea0030cc6d","27e05c6abd","8239ef0cc6","ff64a872c7","5020f093f7","1a018434a8","d99160ef88","cb8db0302c","9e039aafed","de6c377e8f","d214dea856","e9a19d5d51","3f0d4afb57","de643a7ff8","75665d3822","46723687a0","cc77b3ebd3","12d444f9e1"] },
+      "nebula-beige": { f: "ex2_complete_nebula-beige_360_{n}.jpg", h: ["4ea56e6acc","55fe46ef76","86641659ef","4dc48fcbef","4a6f851c39","12d349bff2","f43dc0fb9b","54ad75999e","28dfbaeef5","0daf7515f2","534748b298","100904f451","e7cc4f58ce","498a6b3cca","742ca52725","27d54d37bd","2fa36f48a3","df50cb1582","cb846e76f1","d355235851","83a7b2199d","111fbb583b","c9a2b01b52","7a37badf38"] },
+      "nova-pink": { f: "ex2_inspire_nova-pink_360_{n}.jpg", h: ["3933cf3fe3","ec1e97fb17","7a5e8821b3","eb84484c15","534cdda608","00048de040","cfe1d2d6d5","9a6965dc3c","ff78133889","8d7b6c03fb","1744a3a540","8e64c18265","b5840a102d","c5336265a0","33258b9fca","3ae850c97b","45eb99005a","2ca57582f5","1949556c82","4b9fecde5a","5d18003bba","f3e3910aec","34e336e8b2","f2b9d6ff70"] },
+      "star-silver": { f: "ex2_complete_star-silver_360_{n}.jpg", h: ["10d17bbb76","9d99fce233","4874b08d1d","2060912f45","dd894d87ad","85cd240be6","3f639ce4f3","d4c2eb4e36","cce2521c45","024d723714","d9383ffc02","056261d1e7","af04ed4661","9b84e20a71","4ee7c6dfb3","b3eedd8ff2","ef20b1319d","16859a5d85","f217c6e6e0","aa5d7f2fed","7839cd0616","5968594c2f","24de026652","9f6445df53"] },
+    },
+  },
+  starray_emi: {
+    default: "cloudveil-silver", host: 'https://a-ap.storyblok.com/f/3000753/4431x2954/',
+    colors: {
+      "alpine-white": { f: "{n}.jpg", h: ["2a2d4b6536","a23e1f3a91","453ba3a1bb","1b9bc1c08a","9480f55875","2b7ab4947d","f047a782c0","7b9ee7dfc1","3025bffbe7","91a1e97ae7","7a304b7a15","3d0a767aab","8a941b5e2c","4b4b084636","78ba515288","58f78838ac","58cda8f46d","411f2bac51","92129f4851","747a9cc199","411892cae5","d55ca9fdd5","0d380c5c7c","82b5500310"] },
+      "cloudveil-silver": { f: "{n}.jpg", h: ["5e2ec5764e","cf7c571408","bc98258bd2","8a734ee089","78410df2cf","608dbf8a4c","f32172e9cd","81e7f882b1","6b491f1513","95df80e65f","983c437e6f","0fe107d620","4f086dc50d","55c4f66509","763f7f60e1","cc80a9b31f","c3f5fe10ec","fcd018283a","e0d5543799","44a6e14609","890ac0d38b","71b379e1f6","bedae190eb","330b38845b"] },
+      "glacier-blue": { f: "{n}.jpg", h: ["87f84bff32","22d2d8f728","b05e8f3f79","afe021323d","4f974cd6b8","c36b4332e6","70c8717533","ee42622756","a78c7103f7","7ba929635b","d32dd4aa29","455fd39ab4","2dd50cdaab","cb21013f8e","389beeb699","8623f0a337","16e3b5ea03","f79d0e7c38","dd257fcced","5b2346218f","ce69748f2e","380c7f001e","01f053c2d7","f4b75a8bb2"] },
+      "jungle-green": { f: "{n}.jpg", h: ["9f707630eb","b6a4cde558","0d8312b083","fabe9242d5","cad4d428fa","279ace9696","b102cccc04","d9a5791e05","88a2771da9","3a9862d46b","dd450cbc4d","8fb55ac800","1e4e4f853f","7db34e2a47","819fcc6c52","1a04d5d0c2","3dbef6e07b","7cf8f2013c","e8b8cf5f1a","2ba8286088","a1e4bb5ada","21bc3f74b4","98e41cfe78","7fd7b009fc"] },
+      "polar-black": { f: "{n}.jpg", h: ["b7979f4b91","7e652737b5","8046741274","40d8bcb1c8","236fb1c7bd","b7d7286262","c7ed35c74f","55bc211dad","f29b8c9e30","5f77137d36","4a3a79d507","9693c4766e","9e7f929f83","298a8b8d96","456bcc52b7","7028bd3511","5ee71880f7","239feaeb93","f20245c87e","0b35110a94","b52a364a8e","a4ad3a135c","73550ef927","97f0b34769"] },
+      "volcanic-grey": { f: "{n}.jpg", h: ["050ff5b45e","13d9fb90f3","57acf470c3","cc4167b585","7686b4fe58","63e586c8fc","a3311f674f","bd12b0d47f","a413dcbde5","06d86d5f9e","d04010a487","7a61a0b5ca","f93fcb911c","b1d850f903","a25870a7fc","16d0e23a61","f43f2fa866","a4eb5d73a1","99466ef135","456c3a8f21","10f295f4f2","7cc7767d07","171891131f","54fa63679a"] },
+    },
+  },
+};
+
+function GEC_colorLabel(slug) {
+  return String(slug || '').split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+function GEC_cdnEntry(model) { return GEC_CDN[model] || null; }
+function GEC_cdnColors(model) {
+  const e = GEC_cdnEntry(model);
+  if (!e) return [];
+  return Array.isArray(e.colors) ? e.colors.slice() : Object.keys(e.colors);
+}
+function GEC_cdnDefault(model) { const e = GEC_cdnEntry(model); return (e && e.default) || null; }
+function GEC_cdnHasColor(model, color) { return GEC_cdnColors(model).includes(color); }
+function GEC_cdnFrameUrl(model, color, frame) {
+  const e = GEC_cdnEntry(model);
+  if (!e || !color) return null;
+  const n = Number(frame);
+  if (!Number.isInteger(n) || n < 1) return null;
+  if (e.url) {
+    if (!e.colors.includes(color)) return null;
+    const idx = (e.first || 0) + (n - 1);
+    const num = e.pad ? String(idx).padStart(e.pad, '0') : String(idx);
+    return e.url.replace(/\{c\}/g, color).replace(/\{n\}/g, num);
+  }
+  const rec = e.colors[color];
+  if (!rec || !rec.h || n > rec.h.length) return null;
+  const file = String(rec.f).replace(/\{n\}/g, String(n));
+  return `${e.host}${rec.h[n - 1]}/${file}/m/1500x0`;
+}
+
 
 const GEC_I18N = {
   en: {
@@ -129,8 +197,9 @@ class Geely3DCard extends HTMLElement {
       const id = Object.keys(hass.states).find((e) => /^lock\..*geely.*_doors$/.test(e));
       if (id) prefix = id.slice(5, -6);
     }
-    return { entity_prefix: prefix };
+    return { entity_prefix: prefix, image_source: 'geely' };
   }
+  static getConfigElement() { return document.createElement('geely-3d-card-editor'); }
 
   setConfig(config) {
     const c = config || {};
@@ -212,10 +281,35 @@ class Geely3DCard extends HTMLElement {
         throw new Error('geely-3d-card: "time_format" must be 24h or 12h');
       }
     }
+    const ALLOWED_MODELS = ['auto', 'ex5', 'e5', 'ex2', 'starray_emi', 'generic'];
+    let model = String(c.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_');
+    if (!ALLOWED_MODELS.includes(model)) {
+      throw new Error('geely-3d-card: "model" must be auto, ex5, e5, ex2, starray_emi or generic');
+    }
+    let imageSource = null;
+    if (c.image_source != null && String(c.image_source).trim() !== '') {
+      imageSource = String(c.image_source).trim().toLowerCase();
+      if (imageSource !== 'local' && imageSource !== 'geely') {
+        throw new Error('geely-3d-card: "image_source" must be local or geely');
+      }
+    }
+    const colorSlug = (() => {
+      const s = String(c.color || '').trim().toLowerCase();
+      return /^[a-z0-9][a-z0-9_-]*$/.test(s) ? s : '';
+    })();
+    if (imageSource === 'geely' && colorSlug) {
+      const ok = model !== 'auto' && model !== 'generic'
+        ? GEC_cdnHasColor(model, colorSlug)
+        : Object.keys(GEC_CDN).some((k) => GEC_cdnHasColor(k, colorSlug));
+      if (!ok) {
+        throw new Error('geely-3d-card: "color" is not available for this model in geely image mode');
+      }
+    }
     this._raw = c;
     this._cfg = {
       title: c.title || null,
-      model: String(c.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_'),
+      model,
+      image_source: imageSource,
       prefix,
       climate: entityOpt('climate_entity'),
       language: (c.language || 'auto').toLowerCase(),
@@ -242,6 +336,8 @@ class Geely3DCard extends HTMLElement {
     this._sig = null;
     this._prof = null;
     this._cur = null;
+    this._cdnTried = false;
+    this._forceCdn = false;
     if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
     if (this._built) { this._built = false; this.shadowRoot.innerHTML = ''; }
     if (this._hass) this.hass = this._hass;
@@ -313,18 +409,49 @@ class Geely3DCard extends HTMLElement {
     for (const t of texts) for (const [k, m] of Object.entries(GEC_MODELS)) if (m.match && m.match.test(t)) return k;
     return 'generic';
   }
+  _useCdn() {
+    if (this._forceCdn) return true;
+    if (this._cfg.image_source === 'geely') return true;
+    if (this._cfg.image_source === 'local') return false;
+    return false;
+  }
+  _shouldAutoCdn() {
+    const c = this._raw || {};
+    if (this._cfg.image_source === 'geely' || this._cfg.image_source === 'local') return false;
+    if (c.image_base || c.car_image) return false;
+    const key = this._detectModel();
+    return key !== 'generic' && GEC_cdnColors(key).length > 0;
+  }
+  _frameSrc(i) {
+    const P = this._profile();
+    if (P.single) return P.single;
+    if (P.cdn) return GEC_cdnFrameUrl(P.key, P.color, i) || '';
+    if (!P.base) return '';
+    return `${P.base}${i}.${P.ext}`;
+  }
   _profile() {
     if (this._prof) return this._prof;
     const c = this._raw, key = this._detectModel(), m = GEC_MODELS[key];
-    const color = this._slug(c.color) || m.color;
     const single = c.car_image || null;
+    const useCdn = this._useCdn() && !single;
+    const wanted = this._slug(c.color) || m.color;
+    const color = (useCdn && wanted && !GEC_cdnHasColor(key, wanted)) ? m.color : wanted;
+    const cdn = useCdn && !!color && GEC_cdnHasColor(key, color);
     let frames = Number(c.frames) || (single ? 1 : m.frames);
-    let base = c.image_base || (color ? `/local/geely-ex5/${key}/${color}/` : null);
-    if (base) base = String(base).replace(/\/?$/, '/');
-    if (!single && !base) frames = 0;
+    let base = null;
+    if (!cdn) {
+      base = c.image_base || (color ? `/local/geely-ex5/${key}/${color}/` : null);
+      if (base) base = String(base).replace(/\/?$/, '/');
+    }
+    if (!single && !base && !cdn) frames = 0;
+    let ext = this._extOf(c.image_ext, m.ext);
+    if (cdn) {
+      const e = GEC_cdnEntry(key);
+      if (e && e.ext) ext = e.ext;
+    }
     this._prof = {
-      key, name: m.name, drive: m.drive, frames, base, single,
-      ext: this._extOf(c.image_ext, m.ext),
+      key, name: m.name, drive: m.drive, frames, base, single, color, cdn,
+      ext,
       start: Number(c.start_frame) || m.start,
       direction: Number(c.rotate_direction) || m.direction,
       studio: c.image_background !== undefined ? this._cssColor(c.image_background) : m.studio,
@@ -392,9 +519,17 @@ class Geely3DCard extends HTMLElement {
     const N = P.frames;
     this._pos = Math.min(Math.max(P.start, 1), Math.max(N, 1)) - 1;
     let imgs = '';
+    const rp = P.cdn ? ' referrerpolicy="no-referrer"' : '';
     if (P.single) imgs = `<img draggable="false" alt="" src="${this._esc(P.single)}" data-f="0">`;
-    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._esc((P.base || '') + i + '.' + P.ext)}" data-f="${i - 1}">`;
+    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._esc(this._frameSrc(i))}" data-f="${i - 1}"${rp}>`;
     if (!N) imgs = '<div class="ph"><ha-icon icon="mdi:car-side"></ha-icon></div>';
+    if (!this._cdnErrBound) {
+      this._cdnErrBound = true;
+      root.addEventListener('error', (ev) => {
+        const t = ev.target;
+        if (t && t.tagName === 'IMG' && t.hasAttribute('data-f')) this._onFrameError(t);
+      }, true);
+    }
     root.innerHTML = `
 <style>
   :host { display:block; }
@@ -664,8 +799,12 @@ class Geely3DCard extends HTMLElement {
     let loaded = 0;
     if (!this._imgs.length) this._el.loading.remove();
     this._imgs.forEach((im) => {
-      const done = () => { if (++loaded >= this._imgs.length) this._el.loading.remove(); };
-      if (im.complete) done(); else { im.addEventListener('load', done, { once: true }); im.addEventListener('error', done, { once: true }); }
+      const done = () => { if (++loaded >= this._imgs.length && this._el.loading) this._el.loading.remove(); };
+      if (im.complete && im.naturalWidth > 0) done();
+      else {
+        im.addEventListener('load', done, { once: true });
+        im.addEventListener('error', done, { once: true });
+      }
     });
     const st = this._el.stage;
     if (P.studio) { st.classList.add('studio'); st.style.setProperty('--zc-studio', P.studio); }
@@ -939,15 +1078,29 @@ class Geely3DCard extends HTMLElement {
   }
 
   /* ---------- car map marker ---------- */
+  _onFrameError(im) {
+    if (this._cdnTried || !this._shouldAutoCdn()) return;
+    if (String(im && im.getAttribute('data-f')) !== '0') return;
+    this._cdnTried = true;
+    this._forceCdn = true;
+    this._prof = null;
+    console.info('geely-3d-card: local frames not found; using Geely-hosted images (image_source: geely). Download a copy with scripts/fetch-images.sh for offline use.');
+    Promise.resolve().then(() => {
+      this._built = false;
+      this._cur = null;
+      if (this.shadowRoot) this.shadowRoot.innerHTML = '';
+      if (this._hass) this.hass = this._hass;
+    });
+  }
   _mapMarkerSrc() {
     const P = this._profile();
     if (P.single) return P.single;
-    if (!P.base) return null;
+    if (!P.cdn && !P.base) return null;
     const frames = Math.max(Number(P.frames) || 0, 1);
     let frame = Number(this._cfg.map_marker_frame);
     if (!Number.isInteger(frame) || frame < 1) frame = Number(P.start) || 1;
     frame = Math.min(Math.max(frame, 1), frames);
-    return `${P.base}${frame}.${P.ext}`;
+    return this._frameSrc(frame) || null;
   }
   _makeCarPin() {
     const src = this._mapMarkerSrc();
@@ -965,6 +1118,7 @@ class Geely3DCard extends HTMLElement {
     const img = document.createElement('img');
     img.alt = '';
     img.draggable = false;
+    if (P.cdn) img.referrerPolicy = 'no-referrer';
     img.src = src;
     img.style.cssText = 'width:72px;height:auto;max-height:40px;max-width:72px;display:block;object-fit:contain;pointer-events:none';
     const tip = document.createElement('i');
@@ -1829,6 +1983,145 @@ class Geely3DCard extends HTMLElement {
     E.det.innerHTML = rows.length ? rows.join('') : `<div class="muted">${T('no_controls')}</div>`;
   }
 }
+
+
+const GEC_COLOR_SWATCH = {
+  silver: '#c5c9d0', grey: '#6d7178', gray: '#6d7178', green: '#1f6a42',
+  black: '#1c1c1c', white: '#f5f5f5',
+  'aurora-green': '#1a6b4a', 'comet-grey': '#6a6e74', 'moon-white': '#f3f1ec',
+  'nebula-beige': '#d9cbb8', 'nova-pink': '#e8b4c4', 'star-silver': '#c8ccd2',
+  'alpine-white': '#f7f7f7', 'cloudveil-silver': '#c4c8ce', 'glacier-blue': '#6a8aa8',
+  'jungle-green': '#2d5a3a', 'polar-black': '#161616', 'volcanic-grey': '#5a5d62',
+};
+
+class Geely3DCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._config = {};
+    this.attachShadow({ mode: 'open' });
+  }
+  set hass(hass) { this._hass = hass; this._render(); }
+  setConfig(config) {
+    this._config = { ...(config || {}) };
+    this._render();
+  }
+  _modelKey() {
+    return String(this._config.model || 'auto').toLowerCase().replace(/[\s-]+/g, '_') || 'auto';
+  }
+  _colorOptions(model) {
+    const colors = model === 'auto'
+      ? [...new Set(Object.keys(GEC_CDN).flatMap((k) => GEC_cdnColors(k)))]
+      : GEC_cdnColors(model);
+    return colors.map((c) => ({ value: c, label: GEC_colorLabel(c) }));
+  }
+  _schema() {
+    const colors = this._colorOptions(this._modelKey());
+    return [
+      { name: 'entity_prefix', required: true, selector: { text: {} } },
+      { name: 'climate_entity', selector: { entity: { domain: 'climate' } } },
+      { name: 'model', selector: { select: { mode: 'dropdown', options: [
+        { value: 'auto', label: 'Auto (detect from entities)' },
+        { value: 'ex5', label: 'EX5' },
+        { value: 'e5', label: 'E5' },
+        { value: 'ex2', label: 'EX2' },
+        { value: 'starray_emi', label: 'Starray EM-i' },
+        { value: 'generic', label: 'Generic' },
+      ] } } },
+      { name: 'color', selector: { select: { mode: 'dropdown', options: colors } } },
+      { name: 'image_source', selector: { select: { mode: 'dropdown', options: [
+        { value: '', label: 'Automatic (local, then Geely if missing)' },
+        { value: 'geely', label: 'Geely (online images)' },
+        { value: 'local', label: 'Local files' },
+      ] } } },
+    ];
+  }
+  _labels() {
+    return {
+      entity_prefix: 'Entity prefix',
+      climate_entity: 'Climate entity (optional)',
+      model: 'Model',
+      color: 'Paint color',
+      image_source: 'Car images',
+    };
+  }
+  _onChange(value) {
+    const prev = this._config || {};
+    const next = { ...prev, ...value };
+    const norm = (v) => String(v || 'auto').toLowerCase().replace(/[\s-]+/g, '_');
+    if (norm(next.model) !== norm(prev.model)) {
+      const def = GEC_cdnDefault(norm(next.model));
+      if (def) next.color = def;
+      else if (norm(next.model) === 'generic') delete next.color;
+    }
+    if (next.image_source === '' || next.image_source === 'auto') delete next.image_source;
+    this._config = next;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: next }, bubbles: true, composed: true }));
+    this._render();
+  }
+  _esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+  _render() {
+    const root = this.shadowRoot;
+    const labels = this._labels();
+    const data = { ...this._config };
+    if (data.image_source == null) data.image_source = '';
+    if (data.model == null) data.model = 'auto';
+    const schema = this._schema();
+    const color = data.color;
+    const swatch = color && GEC_COLOR_SWATCH[color];
+    const style = `:host{display:block}
+      .swatch-row{display:flex;align-items:center;gap:8px;margin:0 0 12px;font:13px var(--mdc-typography-body2-font-family,sans-serif);color:var(--primary-text-color,#212121)}
+      .swatch{width:18px;height:18px;border-radius:50%;border:1px solid rgba(127,127,127,.45);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);flex:0 0 auto}
+      .fallback{display:grid;gap:12px;font:14px var(--mdc-typography-body2-font-family,sans-serif);color:var(--primary-text-color,#212121)}
+      .fallback label{display:flex;flex-direction:column;gap:4px;font-weight:500}
+      .fallback input,.fallback select{font:inherit;padding:8px 10px;border-radius:6px;border:1px solid var(--divider-color,#c4c4c4);background:var(--card-background-color,#fff);color:inherit}`;
+    if (customElements.get('ha-form')) {
+      if (!this._form) {
+        root.innerHTML = `<style>${style}</style><div class="swatch-row"${swatch ? '' : ' hidden'}><span class="swatch"></span><span class="swatch-name"></span></div>`;
+        const form = document.createElement('ha-form');
+        this._form = form;
+        form.addEventListener('value-changed', (ev) => this._onChange((ev.detail && ev.detail.value) || {}));
+        root.appendChild(form);
+      }
+      const row = root.querySelector('.swatch-row');
+      if (row) {
+        row.hidden = !swatch;
+        const s = row.querySelector('.swatch');
+        const n = row.querySelector('.swatch-name');
+        if (s) s.style.background = swatch || 'transparent';
+        if (n) n.textContent = GEC_colorLabel(color || '');
+      }
+      this._form.hass = this._hass;
+      this._form.data = data;
+      this._form.schema = schema;
+      this._form.computeLabel = (s) => labels[s.name] || s.name;
+      return;
+    }
+    const fields = schema.map((s) => {
+      const lab = labels[s.name] || s.name;
+      const val = data[s.name] == null ? '' : data[s.name];
+      if (s.selector && s.selector.select) {
+        const opts = s.selector.select.options.map((o) => {
+          const v = typeof o === 'string' ? o : o.value;
+          const l = typeof o === 'string' ? o : o.label;
+          return `<option value="${this._esc(v)}"${String(v) === String(val) ? ' selected' : ''}>${this._esc(l)}</option>`;
+        }).join('');
+        return `<label>${this._esc(lab)}<select name="${this._esc(s.name)}">${opts}</select></label>`;
+      }
+      return `<label>${this._esc(lab)}<input name="${this._esc(s.name)}" value="${this._esc(val)}"></label>`;
+    }).join('');
+    const sw = swatch ? `<div class="swatch-row"><span class="swatch" style="background:${this._esc(swatch)}"></span><span class="swatch-name">${this._esc(GEC_colorLabel(color || ''))}</span></div>` : '';
+    root.innerHTML = `<style>${style}</style>${sw}<form class="fallback">${fields}</form>`;
+    const form = root.querySelector('form');
+    form.addEventListener('change', (ev) => {
+      const fd = {};
+      for (const el of form.elements) if (el.name) fd[el.name] = el.value;
+      this._onChange(fd);
+    });
+  }
+}
+
+if (!customElements.get('geely-3d-card-editor')) customElements.define('geely-3d-card-editor', Geely3DCardEditor);
+
 
 if (!customElements.get('geely-3d-card')) customElements.define('geely-3d-card', Geely3DCard);
 if (!customElements.get('geely-ex5-card')) customElements.define('geely-ex5-card', class extends Geely3DCard {});   // old name (v1.0-1.2)

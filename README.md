@@ -13,11 +13,12 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
   <img src="docs/images/hero-en-dark-desktop.webp" alt="Geely 3D Card, English, dark theme" width="900">
 </p>
 
-> **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely, downloaded by you from [geely.com](https://www.geely.com/) / [geely.com.au](https://www.geely.com.au/) / [geely.de](https://www.geely.de/), and are not part of this repository. The screenshots below use a generic placeholder car and mocked data.
+> **Unofficial.** This card is a community project. It is not affiliated with, endorsed by, or supported by Geely. Car images are © Geely. The card can hotlink Geely's public asset URLs in the browser, or you can download a local copy with `scripts/fetch-images.sh`. The frames are not redistributed in this repository. The screenshots below use a generic placeholder car and mocked data.
 
 ## Features
 
 - 360° car view: drag (mouse or touch) through 24 frames with momentum; vertical page scrolling still works on phones
+- Visual editor: pick the **model** and **paint color**; frames can load from Geely's public HTTPS asset URLs (hotlinked, not redistributed) or from a local copy
 - Per-model profiles with automatic model detection (from the device in the device registry)
 - Battery ring, electric range and range at full charge; **PHEV** fuel tile and combined range
 - Charging panel (power, time to full) while plugged in, plus optional **Start / Stop** buttons for a wall charger in Home Assistant
@@ -56,6 +57,12 @@ The pre-conditioning panel is also available in Hebrew (RTL), including the 24-h
 
 Screenshots use mocked Home Assistant data and a generic placeholder car (not official Geely photography). The map uses a fake Tel Aviv pin.
 
+The visual editor (model, color, and image source):
+
+<p align="center">
+  <img src="docs/images/editor-en-light.webp" alt="Visual editor: pick model and paint color" width="480">
+</p>
+
 ## Quick start
 
 ### Marketplace (Home Assistant 2026.11+)
@@ -81,20 +88,27 @@ If search does not find it, add it as a custom repository first: HACS → ⋮ �
 2. Settings → Dashboards → ⋮ → **Resources** → add `/local/geely-3d-card.js` as **JavaScript module**.
 3. Reload the browser.
 
-Then add the card to a dashboard with a minimal config. `entity_prefix` is the shared prefix of the car's entities from Geely Connect (without the domain):
+Then add the card to a dashboard. In the visual editor, pick your **model** and **paint color** — the 360° frames load from Geely's public HTTPS asset URLs. You do not need to run a download script. `entity_prefix` is the shared prefix of the car's entities from Geely Connect (without the domain).
+
+YAML still works, including for the same options:
 
 ```yaml
 type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
+model: ex5
+color: silver
+image_source: geely
 ```
+
+New cards added from the UI default to `image_source: geely`. Existing YAML without `image_source` still tries local files first and falls back to Geely's URLs if frame 1 is missing.
 
 In a sections view the card takes the full width of its section. Give the section `column_span: 2` or more to get the two-column layout.
 
 The previous type `custom:geely-ex5-card` is still registered as a backward-compatible alias, so existing dashboards keep working after the upgrade.
 
-## Car images
+## Offline / faster: download images locally
 
-The frames are © Geely, so they are not distributed here. The included script downloads them for your own use, crops them and converts them to 900 px WebP (about 0.4–1 MB per color):
+Online mode hotlinks Geely's public frames in the browser; this repository does not redistribute those images. For offline use, a faster load from your Home Assistant instance, or if Geely changes the public URLs, download a local copy. The included script fetches the frames for your own use, crops them and converts them to 900 px WebP (about 0.4–1 MB per color):
 
 ```bash
 scripts/fetch-images.sh --list                                   # models and their colors
@@ -105,7 +119,7 @@ scripts/fetch-images.sh --model starray_emi --color glacier-blue # --remove-back
 # or directly: python3 scripts/fetch_images.py … (needs Pillow)
 ```
 
-Copy the folder to Home Assistant as **`/config/www/geely-ex5/<model>/<color>/`** (File editor, Samba or SSH add-on), so the files are served at `/local/geely-ex5/<model>/<color>/1.webp`. That is the card's default location for the detected `model` and `color`. If you store them anywhere else, set **`image_base`**.
+Copy the folder to Home Assistant as **`/config/www/geely-ex5/<model>/<color>/`** (File editor, Samba or SSH add-on), so the files are served at `/local/geely-ex5/<model>/<color>/1.webp`. That is the card's default location for the detected `model` and `color`. If you store them anywhere else, set **`image_base`**. Set **`image_source: local`** (or just `image_base`) so the card keeps using your files and does not fall back to Geely's CDN.
 
 EX5 and E5 frames: 1 = front, 7 = left side, 13 = rear, 19 = right side. The Geely Australia sets run the other way, and the profile handles that (`rotate_direction`).
 
@@ -113,7 +127,7 @@ EX5 and E5 frames: 1 = front, 7 = left side, 13 = rear, 19 = right side. The Gee
 
 The integration is owner-tested on the EX5, the EX2 (sold as the E2 in some markets, plus the EX2 Max) and the Starray PHEV (Starray EM-i), and is capability-driven, so other Geely models on the Geely Global / International app should work too ([integration README](https://github.com/YossiKon/geely-connect#readme)). The card mirrors that.
 
-Set `model` if auto-detection picks the wrong profile: `ex5`, `e5`, `ex2`, `starray_emi` or `generic`. The **E5** is a separate model from the **EX5** — use `model: e5` and the E5 image set from `scripts/fetch-images.sh`.
+Set `model` if auto-detection picks the wrong profile: `ex5`, `e5`, `ex2`, `starray_emi` or `generic`. The **E5** is a separate model from the **EX5** — use `model: e5` and an E5 color (in the editor, or `scripts/fetch-images.sh --model e5` for a local copy).
 
 ## Configuration
 
@@ -123,8 +137,9 @@ Set `model` if auto-detection picks the wrong profile: `ex5`, `e5`, `ex2`, `star
 type: custom:geely-3d-card
 entity_prefix: my_geely_ex5_1234
 language: auto        # auto, en or he
-model: auto           # or ex5 / e5 / ex2 / starray_emi
+model: ex5            # or auto / e5 / ex2 / starray_emi
 color: silver
+image_source: geely   # or local (files under /local/geely-ex5/...)
 # Optional
 tire_unit: bar        # bar, psi or kpa
 # charge_start_entity: button.wall_charger_start
@@ -157,9 +172,10 @@ precond_settings_entity: input_text.geely_precond_settings
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `color` | string | model default | Image folder name used by the default `image_base` |
-| `image_base` | string | `/local/geely-ex5/<model>/<color>/` | URL folder that contains `1.webp` … `N.webp` |
-| `image_ext` | string | `webp` | Image file extension |
+| `image_source` | string | auto | `geely` loads frames from Geely's public HTTPS asset URLs for the selected model and color (hotlinked, not redistributed). `local` uses `image_base` or `/local/geely-ex5/<model>/<color>/`. If omitted: try local files first; if frame 1 is missing and `image_base` was not set, automatically fall back to `geely` |
+| `color` | string | model default | Paint color slug for the model (e.g. `silver`, `star-silver`). In `geely` mode it must be one of that model's published colors |
+| `image_base` | string | `/local/geely-ex5/<model>/<color>/` | URL folder that contains `1.webp` … `N.webp` when using local images |
+| `image_ext` | string | `webp` | Image file extension for local files |
 | `frames` | number | model default (24) | Number of rotation frames; `1` = a single static image |
 | `car_image` | string | – | URL of one image of your car. Disables rotation |
 | `start_frame` | number | model default | Frame shown at rest (EX5: 5, the three-quarter front) |
@@ -447,8 +463,14 @@ The Geely cloud accepts only one remote command at a time. From v1.7.3 the card 
 **The card looks stale, or a new version does not appear after updating.**  
 Home Assistant and the browser cache the JavaScript module. After a HACS / Marketplace update, reload the browser with a hard refresh (on a phone: close the HA app and reopen it, or clear the cache). If you added the card as a manual resource, bump the `?v=` query string on the resource URL.
 
+**The car images are missing or broken.**  
+If you use online Geely images (`image_source: geely`, or the automatic fallback), Geely may have changed those public URLs. Download a local copy with `scripts/fetch-images.sh` and set `image_source: local` (see [Offline / faster](#offline--faster-download-images-locally)). After a card update, hard-refresh the browser.
+
+**Does the card send my data to Geely?**  
+No car data is uploaded to Geely. The card talks to your Home Assistant instance only. In online image mode the *browser* loads the 360° frames from Geely's CDN (`geely.com`, `assets.geelyauto.eu`, or Storyblok via `geely.com.au`), so those requests include your IP address the same way a visit to those sites would. Use a local copy of the images if you prefer the browser not to contact those servers.
+
 **Is the E5 the same as the EX5?**  
-No. They are related but use different model profiles and image sets. Use `model: e5` (or let auto-detection pick it from the device) and fetch the E5 frames with `scripts/fetch-images.sh --model e5 --color silver`. The EX5 profile and `geely.com` image set will look wrong on an E5.
+No. They are related but use different model profiles and image sets. Use `model: e5` (or let auto-detection pick it from the device) and pick an E5 color, or fetch the E5 frames with `scripts/fetch-images.sh --model e5 --color silver`. The EX5 profile and `geely.com` image set will look wrong on an E5.
 
 **Start at is missing, or the time field showed 12:00 AM.**  
 **Start at** is shown only when `precond_schedule_entity` and `precond_schedule_enabled_entity` are configured. The time picker is always 24-hour (hours 00–23, minutes in 5-minute steps), so it no longer follows the phone's 12-hour locale. If a schedule is not already armed, the default is the next full hour plus one, not midnight.
@@ -462,7 +484,7 @@ Those actions ask for confirmation first (a red confirm dialog). Remote climate 
 ## Credits
 
 - **Integration:** [Geely Connect](https://github.com/YossiKon/geely-connect) (`geely_connect`) by [@YossiKon](https://github.com/YossiKon) — the unofficial Home Assistant integration that talks to Geely's cloud and creates every entity this card reads and controls. Issues with data or commands belong in [its issue tracker](https://github.com/YossiKon/geely-connect/issues). Per its source, its protocol mappings build in part on [nitaybz/geely-global-ha](https://github.com/nitaybz/geely-global-ha).
-- **Car images:** the 360° frames come from Geely's own websites — [geely.com](https://www.geely.com/en/models/ex5) (EX5), Geely Europe's [geely.de](https://www.geely.de/models/geely-e5-electric-suv) (E5) and [geely.com.au](https://www.geely.com.au/) (EX2, Starray EM-i). They are © Geely and are fetched locally by `scripts/fetch-images.sh`; they are not redistributed here.
+- **Car images:** the 360° frames come from Geely's own websites — [geely.com](https://www.geely.com/en/models/ex5) (EX5), Geely Europe's [geely.de](https://www.geely.de/models/geely-e5-electric-suv) (E5) and [geely.com.au](https://www.geely.com.au/) (EX2, Starray EM-i). They are © Geely. The card can hotlink those public asset URLs, or you can fetch a local copy with `scripts/fetch-images.sh`. They are not redistributed here.
 - **Icons:** [Material Design Icons](https://pictogrammers.com/library/mdi/) via Home Assistant's `ha-icon`.
 
 ## עברית
@@ -472,7 +494,7 @@ Those actions ask for confirmation first (a red confirm dialog). Remote climate 
 - הנתונים מגיעים מהאינטגרציה [Geely Connect](https://github.com/YossiKon/geely-connect) של [@YossiKon](https://github.com/YossiKon). חובה להגדיר `entity_prefix`.
 - השפה נבחרת אוטומטית לפי שפת Home Assistant, או בכפייה עם `language: he`.
 - דגם הרכב מזוהה אוטומטית. אפשר לקבוע אותו ידנית עם `model`.
-- תמונות הרכב אינן כלולות במאגר (זכויות יוצרים של Geely). הורידו אותן עם `scripts/fetch-images.sh` והעתיקו ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
+- תמונות הרכב הן © Geely ואינן מופצות במאגר. בבחירת דגם וצבע בכרטיס, הפריימים נטענים מכתובות ציבוריות של Geely (hotlink). לשימוש אופליין אפשר להוריד עותק מקומי עם `scripts/fetch-images.sh` ולהעתיק ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
 - «מצא רכב» פותח מפה עם מיקום הרכב. «מיזוג מראש» פותח לוח להגדרת טמפרטורה, קירור/חימום מהיר, מושבים והפשרה, עם «הפעל עכשיו» או «הפעל בשעה» (בורר 24 שעות).
 - כרטיס לא רשמי, ללא קשר ל-Geely.
 
@@ -483,6 +505,11 @@ language: he
 ```
 
 ## Changelog
+
+### 1.8.0
+- Pick a **model** and **paint color** in a new visual editor (`ha-form`). With `image_source: geely` (the default for cards added from the UI), 360° frames load from Geely's public HTTPS asset URLs — no download script required. The images are hotlinked, not redistributed.
+- `image_source: local` keeps the previous `/local/geely-ex5/...` (or `image_base`) behaviour. YAML without `image_source` still tries local files first and, if frame 1 is missing, automatically falls back to Geely's URLs (with a console note).
+- In Geely image mode, `model` and `color` must be values the card knows for that model.
 
 ### 1.7.4
 - The **Start at** hour / minute picker (and clock times shown as text) always display as `HH : MM` from left to right, including in Hebrew RTL. The label stays in the page direction; the time itself is isolated as LTR.
@@ -523,11 +550,7 @@ Full release notes: [GitHub Releases](https://github.com/1immortal/geely-3d-card
 
 ## Disclaimer
 
-Unofficial project, not affiliated with or endorsed by Geely. "Geely", "EX5", "E5", "EX2" and "Starray" are trademarks of their respective owners. Car images are © Geely and are fetched by the user. They are not part of this project or its license.
-
-## License
-
-[MIT](LICENSE) © 2026 1immortal
+Unofficial project, not affiliated with or endorsed by Geely. "Geely", "EX5", "E5", "EX2" and "Starray" are trademarks of their respective owners. Car images are © Geely. They may be hotlinked from Geely's public asset URLs or fetched locally by the user. They are not part of this project or its license.
 
 ## License
 
