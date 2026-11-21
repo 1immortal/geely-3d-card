@@ -27,7 +27,7 @@ It is a front-end for the excellent **[Geely Connect](https://github.com/YossiKo
 - Service warning chip (days or km to service)
 - Tire pressures in **bar** by default (or `psi` / `kPa` via `tire_unit`) on a small top-view diagram, low pressure highlighted (sensors in psi / kPa / bar are converted automatically)
 - Cabin and outside temperature
-- Quick actions: pre-conditioning on/off, start/stop charging (with confirmation), find car, refresh data
+- Quick actions: pre-conditioning on/off, start/stop charging (with confirmation), find car (opens a map with the car's location, or honk & flash), refresh data
 - Expandable details: seat heating & ventilation (front and rear, where the car has them), windows, sunroof, sunshade, defrost, unlock trunk, unlock **frunk** (EX2 / E2)
 - Every block hides itself when the car does not have the entities – so trims without a sunroof or ventilated seats, and unknown models, just work
 - Tap any value to open the entity's more-info dialog
@@ -134,6 +134,8 @@ Find your **entity prefix**: open any entity of the car, e.g. `lock.my_geely_ex5
 | `charge_start_entity` | string | – | Optional. Entity that starts the wall charger (`button`, `switch`, `script` or `input_button`) |
 | `charge_stop_entity` | string | – | Optional. Entity that stops the wall charger (same domains) |
 | `charger_switch_entity` | string | – | Optional. A single `switch` used for both start (`turn_on`) and stop (`turn_off`). Used for a side if the matching start/stop entity is not set |
+| `location_entity` | string | auto-detected | Optional. Location entity used by the map (`device_tracker.<prefix>_location` is used if it exists) |
+| `find_action` | string | `map` if a location entity exists, otherwise `honk` | `map` opens the in-card map; `honk` presses `button.<prefix>_find_car` as before |
 
 ### Example
 
@@ -171,6 +173,21 @@ charger_switch_entity: switch.my_charger
 ```
 
 A confirmation is shown before the command is sent. A button is greyed out if its entity is unavailable. When the car is unplugged, the bubble stays visible (muted “Not plugged in”) so you can still reach the charger buttons.
+
+### Find my car (map)
+
+Tapping **Find car** opens an in-card map with a pin at the car's location (the same idea as the official app). The default location entity is `device_tracker.<entity_prefix>_location`. You can point it at another entity with `location_entity`, or keep the old horn-and-lights behaviour with `find_action: honk`.
+
+If no location entity is available, the button keeps the previous behaviour and presses `button.<prefix>_find_car`.
+
+The map prefers Home Assistant's built-in map card. If that cannot be created, it falls back to an OpenStreetMap embed (no extra libraries are bundled). Below the map: the current zone or home/away state, a relative last-updated time, **Navigate** (Google Maps), **Waze**, and **Honk & flash** (with confirmation, only if the find-car button exists).
+
+```yaml
+type: custom:geely-3d-card
+entity_prefix: my_geely_ex5_1234
+# location_entity: device_tracker.my_geely_ex5_1234_location   # optional override
+# find_action: honk   # to keep horn & lights only
+```
 
 ### Entities used
 
@@ -212,6 +229,7 @@ EX5 – Hebrew (RTL), desktop:
 - תמונות הרכב אינן כלולות במאגר (זכויות יוצרים של Geely). הורידו אותן עם `scripts/fetch-images.sh` והעתיקו ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
 - כרטיס לא רשמי, ללא קשר ל-Geely.
 - אופציונלי: אם יש לכם עמדת טעינה ב-Home Assistant, אפשר להוסיף כפתורי התחל/עצור טעינה עם `charge_start_entity` ו-`charge_stop_entity`, או מתג אחד עם `charger_switch_entity`.
+- כפתור «מצא רכב» פותח מפה עם מיקום הרכב (אפשר להשאיר את ההתנהגות הישנה עם `find_action: honk`).
 
 ```yaml
 type: custom:geely-3d-card
@@ -220,6 +238,9 @@ language: he
 ```
 
 ## Changelog
+
+### 1.6.0
+- Find car can open an in-card map with a pin at the car, plus Navigate, Waze, and optional Honk & flash (with confirmation). Default is the map when `device_tracker.<prefix>_location` (or `location_entity`) is available; `find_action: honk` keeps the previous behaviour. If no location entity exists, the button still honks as before.
 
 ### 1.5.1
 - Optional `tire_unit: bar` (default) / `psi` / `kpa` for the tire-pressure display. Sensors in psi, bar or kPa are converted automatically. `low_tire_bar` is still compared in bar; `low_tire_psi` can be used instead if you prefer to set the threshold in psi.

@@ -4,7 +4,7 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.5.1';
+const GEC_VERSION = '1.6.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
@@ -38,6 +38,9 @@ const GEC_I18N = {
     temperature: 'Temperature', cabin: 'Cabin', outside: 'Outside', tires: 'Tire pressure',
     unlock: 'Unlock', lock: 'Lock', precond: 'Pre-condition', climate_off: 'Climate off', start_charge: 'Start charging',
     stop_charge: 'Stop charging', find: 'Find car', refresh: 'Refresh',
+    find_map_title: "Where's my car?", find_navigate: 'Navigate', find_waze: 'Waze',
+    find_honk: 'Honk & flash', find_close: 'Close', loc_unavailable: 'Location unavailable',
+    c_honk: 'Honk and flash the car?',
     charger_ctrl_1: 'Charger', charger_ctrl_2: 'control',
     odometer: 'Odometer', to_service: 'To service', consumption: 'Consumption', last_trip: 'Last trip', kwh100: 'kWh/100 km',
     seat_heat_driver: 'Driver seat heating', seat_heat_passenger: 'Passenger seat heating',
@@ -71,6 +74,9 @@ const GEC_I18N = {
     temperature: 'טמפרטורה', cabin: 'בתא', outside: 'בחוץ', tires: 'לחץ צמיגים',
     unlock: 'פתח נעילה', lock: 'נעל', precond: 'מיזוג מראש', climate_off: 'כבה מיזוג', start_charge: 'התחל טעינה',
     stop_charge: 'עצור טעינה', find: 'מצא רכב', refresh: 'רענן',
+    find_map_title: 'איפה הרכב?', find_navigate: 'נווט', find_waze: 'Waze',
+    find_honk: 'צפור והבהב', find_close: 'סגור', loc_unavailable: 'מיקום לא זמין',
+    c_honk: 'לצפור ולהבהב?',
     charger_ctrl_1: 'שליטת', charger_ctrl_2: 'עמדת טעינה',
     odometer: 'מד מרחק', to_service: 'לטיפול', consumption: 'צריכה', last_trip: 'נסיעה אחרונה', kwh100: 'קוט״ש/100',
     seat_heat_driver: 'חימום מושב נהג', seat_heat_passenger: 'חימום מושב נוסע',
@@ -131,6 +137,13 @@ class Geely3DCard extends HTMLElement {
     if (!['bar', 'psi', 'kpa'].includes(tireUnit)) {
       throw new Error('geely-3d-card: "tire_unit" must be bar, psi or kpa');
     }
+    let findAction = null;
+    if (c.find_action != null && String(c.find_action).trim() !== '') {
+      findAction = String(c.find_action).trim().toLowerCase();
+      if (findAction !== 'map' && findAction !== 'honk') {
+        throw new Error('geely-3d-card: "find_action" must be map or honk');
+      }
+    }
     this._raw = c;
     this._cfg = {
       title: c.title || null,
@@ -144,6 +157,8 @@ class Geely3DCard extends HTMLElement {
         : c.low_tire_psi != null && String(c.low_tire_psi).trim() !== '' ? Number(c.low_tire_psi) * 0.0689476
         : 2.3,
       tire_unit: tireUnit,
+      location: entityOpt('location_entity'),
+      find_action: findAction,
       charge_start: chargeOpt('charge_start_entity'),
       charge_stop: chargeOpt('charge_stop_entity'),
       charger_switch: chargeOpt('charger_switch_entity', ['switch']),
@@ -151,6 +166,7 @@ class Geely3DCard extends HTMLElement {
     this._sig = null;
     this._prof = null;
     this._cur = null;
+    if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
     if (this._built) { this._built = false; this.shadowRoot.innerHTML = ''; }
     if (this._hass) this.hass = this._hass;
   }
@@ -281,7 +297,7 @@ class Geely3DCard extends HTMLElement {
 
   _signature(dark) {
     const p = `.${this._cfg.prefix}_`, clim = this._climateId();
-    const extra = [this._chargeStartId(), this._chargeStopId()].filter(Boolean);
+    const extra = [this._chargeStartId(), this._chargeStopId(), this._locationId()].filter(Boolean);
     const parts = [this._lang, dark ? 'd' : 'l', Math.floor(Date.now() / 60000)];
     for (const [id, s] of Object.entries(this._hass.states)) {
       if (id.includes(p) || id === clim || extra.includes(id)) parts.push(id, s.state, s.attributes.current_position);
@@ -420,8 +436,39 @@ class Geely3DCard extends HTMLElement {
   .btn { background:var(--zc-pan2); }
   .btn.sel { background:var(--zc-blue); color:#fff; }
   .muted { color:var(--zc-mut); font-size:12px; }
-  .modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:10; backdrop-filter:blur(2px); }
+  .modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:20; backdrop-filter:blur(2px); }
   .modal.show { display:flex; }
+  .map-modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:15; backdrop-filter:blur(2px); padding:10px; box-sizing:border-box; }
+  .map-modal.show { display:flex; }
+  .map-sheet { background:var(--card-background-color, #1c2230); color:var(--primary-text-color, var(--zc-fg));
+    border-radius:16px; width:min(520px, 100%); max-height:100%; display:flex; flex-direction:column; overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  ha-card.light .map-sheet { background:#fff; color:#1b2230; }
+  .map-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px 8px; }
+  .map-head h2 { margin:0; font-size:17px; font-weight:700; letter-spacing:.2px; }
+  .map-close { border:none; background:var(--zc-pan2); color:inherit; width:36px; height:36px; border-radius:10px; cursor:pointer;
+    font:700 18px var(--zc-font); line-height:1; flex:none; }
+  .map-canvas { height:min(42vh, 280px); min-height:180px; background:var(--zc-pan2); position:relative; }
+  .map-canvas iframe, .map-canvas > * { width:100%; height:100%; border:0; display:block; }
+  .map-canvas .map-empty { display:flex; align-items:center; justify-content:center; height:100%; padding:16px; text-align:center; color:var(--zc-mut); font-size:14px; }
+  .map-meta { padding:10px 14px 4px; }
+  .map-zone { font-weight:600; font-size:14.5px; }
+  .map-updated { margin-top:2px; }
+  .map-acts { display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px 14px; }
+  .map-btn { flex:1 1 30%; min-width:88px; text-align:center; text-decoration:none; border:none; border-radius:10px; padding:9px 8px;
+    font:600 13px var(--zc-font); cursor:pointer; color:inherit; background:var(--zc-pan2); display:inline-flex; align-items:center;
+    justify-content:center; gap:5px; box-sizing:border-box; }
+  .map-btn ha-icon { --mdc-icon-size:16px; }
+  a.map-btn { color:inherit; }
+  .map-btn.nav { background:color-mix(in srgb, var(--zc-blue) 16%, transparent); color:var(--zc-blue); }
+  .map-btn.waze { background:color-mix(in srgb, var(--zc-teal) 16%, transparent); color:var(--zc-teal); }
+  .map-btn.honk { background:color-mix(in srgb, var(--zc-amber) 16%, transparent); color:var(--zc-amber); }
+  .map-btn[disabled], .map-btn.is-off { opacity:.4; pointer-events:none; cursor:not-allowed; }
+  .map-btn.hidden { display:none; }
+  @container (max-width: 420px) {
+    .map-canvas { height:min(38vh, 240px); min-height:160px; }
+    .map-btn { font-size:12.5px; padding:8px 6px; }
+  }
   .box { background:var(--card-background-color, #1c2230); color:var(--primary-text-color, #e8eef8); border-radius:16px; padding:18px; width:min(320px, 86%); box-shadow:0 10px 40px rgba(0,0,0,.5); text-align:center; }
   ha-card.light .box { background:#fff; color:#1b2230; }
   .box p { margin:4px 0 16px; font-size:15px; line-height:1.4; }
@@ -448,6 +495,18 @@ class Geely3DCard extends HTMLElement {
       <div class="det"></div>
     </div>
   </div>
+  <div class="map-modal" part="map-modal">
+    <div class="map-sheet" role="dialog" aria-modal="true">
+      <div class="map-head"><h2 class="map-title"></h2><button type="button" class="map-close" data-act="map_close" aria-label="">×</button></div>
+      <div class="map-canvas"></div>
+      <div class="map-meta"><div class="map-zone"></div><div class="map-updated muted"></div></div>
+      <div class="map-acts">
+        <a class="map-btn nav" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:google-maps"></ha-icon><span></span></a>
+        <a class="map-btn waze" target="_blank" rel="noopener noreferrer"><ha-icon icon="mdi:waze"></ha-icon><span></span></a>
+        <button type="button" class="map-btn honk" data-act="map_honk"><ha-icon icon="mdi:bullhorn"></ha-icon><span></span></button>
+      </div>
+    </div>
+  </div>
   <div class="modal"><div class="box"><p></p><div class="b2"><button class="yes"></button><button class="no"></button></div></div></div>
   <div class="toast"></div>
 </ha-card>`;
@@ -455,7 +514,9 @@ class Geely3DCard extends HTMLElement {
     this._card = $('ha-card');
     this._el = { title: $('.title'), sub: $('.sub'), upd: $('.upd'), chips: $('.chips'), tiles: $('.tiles'), acts: $('.acts'),
       stats: $('.stats'), det: $('.det'), more: $('.more'), modal: $('.modal'), toast: $('.toast'), stage: $('.stage'),
-      hint: $('.hint'), loading: $('.loading'), yes: $('.modal .yes'), no: $('.modal .no') };
+      hint: $('.hint'), loading: $('.loading'), yes: $('.modal .yes'), no: $('.modal .no'),
+      mmap: $('.map-modal'), mapTitle: $('.map-title'), mapClose: $('.map-close'), mapCanvas: $('.map-canvas'),
+      mapZone: $('.map-zone'), mapUpdated: $('.map-updated'), mapNav: $('.map-btn.nav'), mapWaze: $('.map-btn.waze'), mapHonk: $('.map-btn.honk') };
     this._applyStatic();
     this._imgs = [...root.querySelectorAll('.frames img')];
     let loaded = 0;
@@ -480,6 +541,7 @@ class Geely3DCard extends HTMLElement {
     this._el.no.addEventListener('click', () => this._closeModal());
     this._el.yes.addEventListener('click', () => { const fn = this._pending; this._closeModal(); if (fn) fn(); });
     this._el.modal.addEventListener('click', (e) => { if (e.target === this._el.modal) this._closeModal(); });
+    this._el.mmap.addEventListener('click', (e) => { if (e.target === this._el.mmap) this._closeMap(); });
   }
 
   _applyStatic() {
@@ -588,7 +650,12 @@ class Geely3DCard extends HTMLElement {
       }
       case 'charge_start': this._chargeAct(true); break;
       case 'charge_stop': this._chargeAct(false); break;
-      case 'find': this._svc('button', 'press', { entity_id: this._id('button', 'find_car') }, 't_find'); break;
+      case 'find':
+        if (this._findAction() === 'map' && this._locationId()) this._openMap();
+        else this._svc('button', 'press', { entity_id: this._id('button', 'find_car') }, 't_find');
+        break;
+      case 'map_close': this._closeMap(); break;
+      case 'map_honk': this._honkFromMap(); break;
       case 'refresh': this._svc('button', 'press', { entity_id: this._id('button', 'refresh_data') }, 't_refresh'); break;
       case 'press': this._confirm(this._t('c_' + d.key), () => this._svc('button', 'press', { entity_id: d.ent })); break;
       case 'select': this._svc('select', 'select_option', { entity_id: d.ent, option: d.opt }, 't_updated'); break;
@@ -599,6 +666,112 @@ class Geely3DCard extends HTMLElement {
         break;
       }
     }
+  }
+
+
+  _locationId() {
+    if (this._cfg.location) return this._cfg.location;
+    const id = this._id('device_tracker', 'location');
+    return this._s(id) ? id : null;
+  }
+  _findAction() {
+    if (this._cfg.find_action) return this._cfg.find_action;
+    return this._locationId() ? 'map' : 'honk';
+  }
+  _locCoords(s) {
+    const lat = s && Number(s.attributes && s.attributes.latitude);
+    const lon = s && Number(s.attributes && s.attributes.longitude);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+    return { lat, lon };
+  }
+  _locZoneText(s) {
+    if (!s) return this._t('loc_unavailable');
+    const st = String(s.state || '');
+    if (st === 'home') return this._t('home');
+    if (st === 'not_home') return this._t('away');
+    if (GEC_BAD.includes(st.toLowerCase())) return this._t('loc_unavailable');
+    return st;
+  }
+  _onEscKey = (e) => {
+    if (e.key !== 'Escape') return;
+    if (this._el.modal.classList.contains('show')) { this._closeModal(); e.preventDefault(); return; }
+    if (this._el.mmap.classList.contains('show')) { this._closeMap(); e.preventDefault(); }
+  }
+  _openMap() {
+    const locId = this._locationId();
+    const s = this._s(locId);
+    const coords = this._locCoords(s);
+    const E = this._el;
+    E.mapTitle.textContent = this._t('find_map_title');
+    E.mapClose.setAttribute('aria-label', this._t('find_close'));
+    E.mapNav.querySelector('span').textContent = this._t('find_navigate');
+    E.mapWaze.querySelector('span').textContent = this._t('find_waze');
+    E.mapHonk.querySelector('span').textContent = this._t('find_honk');
+    E.mapZone.textContent = this._locZoneText(s);
+    const upd = s && this._rel(s.last_updated || s.last_changed);
+    E.mapUpdated.textContent = upd ? this._t('updated', { t: upd }) : '';
+    const honkId = this._id('button', 'find_car');
+    E.mapHonk.classList.toggle('hidden', !this._s(honkId));
+    if (coords) {
+      const dest = `${coords.lat.toFixed(6)},${coords.lon.toFixed(6)}`;
+      E.mapNav.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
+      E.mapWaze.href = `https://waze.com/ul?ll=${encodeURIComponent(dest)}&navigate=yes`;
+      E.mapNav.classList.remove('is-off');
+      E.mapWaze.classList.remove('is-off');
+      E.mapNav.removeAttribute('aria-disabled');
+      E.mapWaze.removeAttribute('aria-disabled');
+    } else {
+      E.mapNav.removeAttribute('href');
+      E.mapWaze.removeAttribute('href');
+      E.mapNav.classList.add('is-off');
+      E.mapWaze.classList.add('is-off');
+      E.mapNav.setAttribute('aria-disabled', 'true');
+      E.mapWaze.setAttribute('aria-disabled', 'true');
+    }
+    E.mmap.classList.add('show');
+    if (!this._escBound) { document.addEventListener('keydown', this._onEscKey); this._escBound = true; }
+    this._fillMap(E.mapCanvas, locId, coords);
+  }
+  _closeMap() {
+    if (this._el && this._el.mmap) this._el.mmap.classList.remove('show');
+    if (this._el && this._el.mapCanvas) this._el.mapCanvas.innerHTML = '';
+    if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
+  }
+  _honkFromMap() {
+    const id = this._id('button', 'find_car');
+    if (!this._s(id)) return;
+    this._confirm(this._t('c_honk'), () => this._svc('button', 'press', { entity_id: id }, 't_find'));
+  }
+  _fillMap(canvas, locId, coords) {
+    canvas.innerHTML = '';
+    if (!coords) {
+      const empty = document.createElement('div');
+      empty.className = 'map-empty';
+      empty.textContent = this._t('loc_unavailable');
+      canvas.appendChild(empty);
+      return;
+    }
+    const fallback = () => {
+      canvas.innerHTML = '';
+      const dLat = 0.006, dLon = 0.008;
+      const bbox = `${coords.lon - dLon},${coords.lat - dLat},${coords.lon + dLon},${coords.lat + dLat}`;
+      const marker = `${coords.lat},${coords.lon}`;
+      const iframe = document.createElement('iframe');
+      iframe.title = this._t('find_map_title');
+      iframe.referrerPolicy = 'no-referrer';
+      iframe.setAttribute('loading', 'lazy');
+      iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(marker)}`;
+      canvas.appendChild(iframe);
+    };
+    const loader = (typeof window !== 'undefined' && window.loadCardHelpers) ? window.loadCardHelpers : null;
+    if (typeof loader !== 'function') { fallback(); return; }
+    Promise.resolve().then(() => loader()).then((h) => {
+      if (!this._el.mmap.classList.contains('show')) return;
+      const card = h.createCardElement({ type: 'map', entities: [locId], default_zoom: 16, hours_to_show: 0, theme_mode: 'auto' });
+      card.hass = this._hass;
+      canvas.innerHTML = '';
+      canvas.appendChild(card);
+    }).catch(() => fallback());
   }
 
   _chargeStartId() { return this._cfg.charge_start || this._cfg.charger_switch || null; }
@@ -746,7 +919,7 @@ class Geely3DCard extends HTMLElement {
       btn('lock', lockS === 'locked' ? 'mdi:lock' : 'mdi:lock-open-variant', T(lockS === 'locked' ? 'unlock' : 'lock'), lockS !== 'locked' && !!lockS, 'var(--zc-red)', lockId),
       btn('climate', 'mdi:fan', T(climOn ? 'climate_off' : 'precond'), climOn, 'var(--zc-blue)', clim),
       btn('charge', 'mdi:ev-station', T(chgOn ? 'stop_charge' : 'start_charge'), chgOn, 'var(--zc-teal)', this._id('switch', 'charging')),
-      btn('find', 'mdi:car-search', T('find'), false, null, this._id('button', 'find_car')),
+      btn('find', 'mdi:car-search', T('find'), false, null, (this._findAction() === 'map' && this._locationId()) ? this._locationId() : this._id('button', 'find_car')),
       btn('refresh', 'mdi:refresh', T('refresh'), false, null, this._id('button', 'refresh_data')),
     ].join('');
 
