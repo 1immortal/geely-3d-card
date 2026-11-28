@@ -148,6 +148,8 @@ tire_unit: bar        # bar, psi or kpa
 # map_marker: car     # or default
 # time_format: 24h    # or 12h; Hebrew defaults to 24h
 # command_delay: 2    # seconds between pre-conditioning commands
+# command_cooldown: 3 # seconds between any other commands to the car
+# stale_minutes: 60   # "Old data" warning when the car last reported longer ago
 precond_schedule_entity: input_datetime.geely_precond_time
 precond_schedule_enabled_entity: input_boolean.geely_precond_scheduled
 precond_settings_entity: input_text.geely_precond_settings
@@ -166,7 +168,9 @@ precond_settings_entity: input_text.geely_precond_settings
 | `title` | string | model name | Card title |
 | `climate_entity` | string | auto-detected | Pre-conditioning climate entity. Auto-detection looks for `climate.<prefix>_climate`, then any climate entity whose name matches the end of the prefix. Set it if detection picks nothing or the wrong entity |
 | `service_warning_days` | number | `14` | Show the service chip when days to service ≤ this |
-| `service_warning_km` | number | `1000` | …or when distance to service ≤ this (km) |
+| `service_warning_km` | number | `1000` | …or when distance to service ≤ this (km). A days-to-service of 0 or 1 is treated as a placeholder (some cars send it while thousands of km remain) and ignored when the distance is above this value, unless a `binary_sensor.<prefix>_service_warning` exists and is on |
+| `stale_minutes` | number | `60` | The header shows when the **car** last reported (`car_reported_at`, falling back to `last_updated`). If that is older than this many minutes, an amber “Old data” warning is shown. `0` turns the warning off |
+| `command_cooldown` | number | `3` | Seconds between remote commands to the car from any button in the card. Commands are queued (shared by every card for the same car on the page), a busy refusal is retried once, and taps that would not change anything are skipped. `0` disables the spacing |
 
 #### Images
 
@@ -451,14 +455,17 @@ If `from_json` cannot parse the helper (invalid or empty JSON), the `cfg.t is nu
 
 All are `<domain>.<entity_prefix>_<key>`. Missing entities are simply hidden.
 
-- `sensor`: `battery`, `electric_range`, `range_at_full_charge`, `charger_connection`, `charging_power`, `time_to_full_charge`, `interior_temperature`, `exterior_temperature`, `tire_pressure_fl/fr/rl/rr`, `days_to_service`, `distance_to_service`, `total_mileage`, `average_consumption`, `last_trip`, `engine_state`, `last_updated`, `car_reported_at`; PHEV: `fuel_level`, `fuel_level_percent`, `fuel_range`, `combined_range`
-- `binary_sensor`: `connected`, `charger_plug`, `door_driver`, `door_passenger`, `door_rear_left`, `door_rear_right`, `trunk`, `hood`; PHEV: `fuel_flap`
+- `sensor`: `battery`, `electric_range`, `range_at_full_charge`, `charger_connection`, `charging_power`, `time_to_full_charge`, `charge_complete`, `interior_temperature`, `exterior_temperature`, `tire_pressure_fl/fr/rl/rr`, `days_to_service`, `distance_to_service`, `total_mileage`, `average_consumption`, `last_trip`, `engine_state`, `last_updated`, `car_reported_at`; PHEV: `fuel_level`, `fuel_level_percent`, `fuel_range`, `combined_range`
+- `binary_sensor`: `connected`, `charger_plug`, `door_driver`, `door_passenger`, `door_rear_left`, `door_rear_right`, `trunk`, `hood`; optional `service_warning`; PHEV: `fuel_flap`
 - `lock.…_doors`, `switch.…_charging`, `switch.…_defrost`, `switch.…_steering_wheel_heat`, `switch.…_window_ventilation`, `cover.…_all_windows`, `cover.…_sunroof`, `cover.…_sunshade`, `select.…_seat_heat_*` / `select.…_seat_vent_*` (driver, passenger, rear_left, rear_right), `button.…_find_car`, `button.…_refresh_data`, `button.…_unlock_trunk`, `button.…_unlock_frunk`, `device_tracker.…_location`, and the climate entity
 
 ## FAQ / troubleshooting
 
 **A toast says “the last request has not yet been executed / send the command later.”**  
-The Geely cloud accepts only one remote command at a time. From v1.7.3 the card sends pre-conditioning commands sequentially, waits `command_delay` (default 2 seconds), skips accessories that are already in the desired state, and retries that busy error up to three times. If a command still fails, the panel lists which items failed instead of showing Home Assistant's raw toast. Give the car a few seconds between any other remote commands (the official app, automations, or a previous Start now).
+The Geely cloud accepts only one remote command at a time. From v1.7.3 the card sends pre-conditioning commands sequentially, waits `command_delay` (default 2 seconds), skips accessories that are already in the desired state, and retries that busy error up to three times. If a command still fails, the panel lists which items failed instead of showing Home Assistant's raw toast. From v1.9.0 every other button in the card goes through the same queue: commands to the car are spaced by `command_cooldown` (default 3 seconds), a busy refusal is retried once, and a tap that would not change anything (for example Lock on a locked car) is skipped. The official app and your automations are not covered by the card's queue, so give the car a few seconds after those.
+
+**The header says “Old data”.**  
+A parked Geely stops reporting, and the cloud keeps serving its last snapshot. The header now shows when the car itself last reported (`car_reported_at`) instead of when Home Assistant last polled. Tap it for the history; hover it for the last poll time. Press **Refresh** to ask the car for fresh data, or raise / disable the warning with `stale_minutes`.
 
 **The card looks stale, or a new version does not appear after updating.**  
 Home Assistant and the browser cache the JavaScript module. After a HACS / Marketplace update, reload the browser with a hard refresh (on a phone: close the HA app and reopen it, or clear the cache). If you added the card as a manual resource, bump the `?v=` query string on the resource URL.
@@ -496,6 +503,8 @@ Those actions ask for confirmation first (a red confirm dialog). Remote climate 
 - דגם הרכב מזוהה אוטומטית. אפשר לקבוע אותו ידנית עם `model`.
 - תמונות הרכב הן © Geely ואינן מופצות במאגר. בבחירת דגם וצבע בכרטיס, הפריימים נטענים מכתובות ציבוריות של Geely (hotlink). לשימוש אופליין אפשר להוריד עותק מקומי עם `scripts/fetch-images.sh` ולהעתיק ל-`/config/www/geely-ex5/<דגם>/<צבע>/`.
 - «מצא רכב» פותח מפה עם מיקום הרכב. «מיזוג מראש» פותח לוח להגדרת טמפרטורה, קירור/חימום מהיר, מושבים והפשרה, עם «הפעל עכשיו» או «הפעל בשעה» (בורר 24 שעות).
+- הכותרת מציגה מתי הרכב דיווח לאחרונה, ואחרי 60 דקות (`stale_minutes`) מופיעה אזהרת «נתונים ישנים». בזמן טעינה מוצגת שעת סיום הטעינה, ובטעינה מלאה מוצג «טעון במלואו».
+- פקודות לרכב נשלחות בתור אחת אחרי השנייה, ברווח של 3 שניות (`command_cooldown`), עם ניסיון חוזר אחד אם הרכב עסוק.
 - כרטיס לא רשמי, ללא קשר ל-Geely.
 
 ```yaml
@@ -505,6 +514,14 @@ language: he
 ```
 
 ## Changelog
+
+### 1.9.0
+- **Freshness:** the header shows when the car last reported (`car_reported_at`, falling back to `last_updated`), with an amber “Old data” / “נתונים ישנים” warning after `stale_minutes` (default 60). The last poll time is in the tooltip.
+- **Service chip:** a days-to-service of 0 or 1 is ignored when plenty of distance remains (a placeholder some cars send), so it no longer shows a false “Service today”. An optional `binary_sensor.<prefix>_service_warning` is used when it exists.
+- **One command queue:** every remote command from the card is queued and spaced by `command_cooldown` (default 3 s), shared by all cards for the same car. A Geely busy refusal (8070, “the last request has not yet been executed”) is retried once; taps that would not change anything are skipped. The pre-conditioning sequence keeps its own `command_delay` and retries and holds the queue while it runs. Refresh is never held back.
+- **Charging:** while charging, the time the charge will finish is shown (from `sensor.<prefix>_charge_complete`, in 24-hour time for Hebrew or per `time_format`, in your Home Assistant time zone setting). When the car is plugged in at 100 %, the tile shows **Charged**.
+- **Performance:** the visible start frame loads first and the other 23 frames after it; frames not loaded yet are fetched on demand while rotating. The card cancels its animation and timers when removed from the page, and no longer scans every Home Assistant entity on each update.
+- Hebrew relative times no longer show the number twice (“לפני שעתיים (2)”).
 
 ### 1.8.1
 - The visual editor now includes language, tire unit, charge start/stop, find-car action, map marker, time format, and pre-conditioning helper entities (in an expandable section), plus `image_base` when using local images. Labels are Hebrew when Home Assistant's language is Hebrew.

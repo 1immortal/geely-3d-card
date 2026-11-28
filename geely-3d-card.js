@@ -4,8 +4,19 @@
  * Vanilla web component, no build step, no external dependencies.
  * https://github.com/1immortal/geely-3d-card - MIT License
  */
-const GEC_VERSION = '1.8.1';
+const GEC_VERSION = '1.9.0';
 const GEC_BAD = ['unknown', 'unavailable', 'none', ''];
+
+/* One command queue per car (entity prefix), shared by every card instance on the page.
+ * The car drops a command that arrives while it is still executing the previous one
+ * (Geely error 8070, "the last request has not yet been executed"), so car commands are
+ * queued and spaced; a busy refusal is retried once after the cooldown. */
+const GEC_GATES = new Map();
+function GEC_gate(key) {
+  let g = GEC_GATES.get(key);
+  if (!g) { g = { tail: Promise.resolve(), last: 0, pending: 0 }; GEC_GATES.set(key, g); }
+  return g;
+}
 
 /* Per-model profiles. `direction` is the rotation sense of the frame set (1 = frame numbers turn the car
  * clockwise seen from above, like geely.com's EX5 and Geely Europe's E5 sets; -1 = the opposite, like the Geely Australia sets).
@@ -96,6 +107,8 @@ const GEC_I18N = {
     loading: 'Loading…', drag: 'Drag to rotate', details: 'Details & controls', yes: 'Confirm', no: 'Cancel',
     connected: 'Connected', disconnected: 'Offline', home: 'Home', away: 'Away', engine_on: 'Engine on', parked: 'Parked',
     updated: 'Updated {t}', car_reported: 'Car last reported {t}', now: 'just now',
+    reported: 'Car reported {t}', synced: 'Last sync {t}', stale: 'Old data', service_due: 'Service due',
+    charged: 'Charged', eta: 'Done at {t}', t_queued: 'Queued, waiting for the car…', t_noop: 'Already set',
     locked: 'Locked', unlocked: 'Unlocked',
     door_driver: 'Driver door open', door_passenger: 'Passenger door open', door_rear_left: 'Rear left door open',
     door_rear_right: 'Rear right door open', trunk: 'Trunk open', hood: 'Hood open', windows_open: 'Windows open', sunroof_open: 'Sunroof open',
@@ -144,6 +157,8 @@ const GEC_I18N = {
     loading: 'טוען…', drag: 'גררו לסיבוב', details: 'פרטים ובקרות', yes: 'אישור', no: 'ביטול',
     connected: 'מחובר', disconnected: 'לא מחובר', home: 'בבית', away: 'מחוץ לבית', engine_on: 'מנוע פועל', parked: 'חונה',
     updated: 'עודכן {t}', car_reported: 'דיווח אחרון מהרכב {t}', now: 'עכשיו',
+    reported: 'דיווח מהרכב {t}', synced: 'סנכרון אחרון {t}', stale: 'נתונים ישנים', service_due: 'נדרש טיפול',
+    charged: 'טעון במלואו', eta: 'יסתיים ב-{t}', t_queued: 'בתור, ממתין לרכב…', t_noop: 'כבר מוגדר',
     locked: 'נעול', unlocked: 'לא נעול',
     door_driver: 'דלת נהג פתוחה', door_passenger: 'דלת נוסע פתוחה', door_rear_left: 'דלת אחורית שמאל פתוחה',
     door_rear_right: 'דלת אחורית ימין פתוחה', trunk: 'תא מטען פתוח', hood: 'מכסה מנוע פתוח', windows_open: 'חלונות פתוחים', sunroof_open: 'גג נפתח פתוח',
@@ -274,6 +289,14 @@ class Geely3DCard extends HTMLElement {
       }
       commandDelay = n;
     }
+    const numOpt = (key, def) => {
+      if (c[key] == null || String(c[key]).trim() === '') return def;
+      const n = Number(c[key]);
+      if (!isFinite(n) || n < 0) throw new Error(`geely-3d-card: "${key}" must be a non-negative number`);
+      return n;
+    };
+    const staleMinutes = numOpt('stale_minutes', 60);
+    const commandCooldown = numOpt('command_cooldown', 3);
     let timeFormat = null;
     if (c.time_format != null && String(c.time_format).trim() !== '') {
       timeFormat = String(c.time_format).trim().toLowerCase();
@@ -331,16 +354,32 @@ class Geely3DCard extends HTMLElement {
       map_marker: mapMarker,
       map_marker_frame: mapMarkerFrame,
       command_delay: commandDelay,
+      command_cooldown: commandCooldown,
+      stale_minutes: staleMinutes,
       time_format: timeFormat,
     };
+    this._sigCache = null;
     this._sig = null;
     this._prof = null;
     this._cur = null;
+    this._restLoaded = false;
     this._cdnTried = false;
     this._forceCdn = false;
     if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
     if (this._built) { this._built = false; this.shadowRoot.innerHTML = ''; }
     if (this._hass) this.hass = this._hass;
+  }
+
+  connectedCallback() {
+    if (this._built && this._el) { this._syncEsc(); this._loadRestFrames(); }
+    if (this._built && this._hass) { this._sig = null; this.hass = this._hass; }
+  }
+  disconnectedCallback() {
+    cancelAnimationFrame(this._raf); this._raf = null;
+    clearTimeout(this._tt); this._tt = null;
+    clearTimeout(this._restTimer); this._restTimer = null;
+    if (this._mapHookTimer) { clearTimeout(this._mapHookTimer); this._mapHookTimer = null; }
+    if (this._escBound) { document.removeEventListener('keydown', this._onEscKey); this._escBound = false; }
   }
 
   getCardSize() { return 9; }
@@ -393,9 +432,11 @@ class Geely3DCard extends HTMLElement {
     const a = Math.abs(sec);
     if (a < 60) return this._t('now');
     const rtf = new Intl.RelativeTimeFormat(this._lang, { numeric: 'auto' });
-    if (a < 3600) return rtf.format(Math.round(sec / 60), 'minute');
-    if (a < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
-    return rtf.format(Math.round(sec / 86400), 'day');
+    // Hebrew ICU adds the number to dual forms ("לפני שעתיים (2)"); drop that echo.
+    const f = (v, u) => rtf.format(v, u).replace(/\s*\(\d+\)$/, '');
+    if (a < 3600) return f(Math.round(sec / 60), 'minute');
+    if (a < 86400) return f(Math.round(sec / 3600), 'hour');
+    return f(Math.round(sec / 86400), 'day');
   }
   _detectModel() {
     const want = this._cfg.model;
@@ -505,9 +546,17 @@ class Geely3DCard extends HTMLElement {
       this._cfg.precond_schedule, this._cfg.precond_enabled, this._cfg.precond_settings,
       ...((this._cfg.precond_entities) || [])].filter(Boolean);
     const parts = [this._lang, dark ? 'd' : 'l', Math.floor(Date.now() / 60000)];
-    for (const [id, s] of Object.entries(this._hass.states)) {
-      if (id.includes(p) || id === clim || extra.includes(id)) parts.push(id, s.state, s.attributes.current_position);
+    const states = this._hass.states;
+    const key = `${p}|${clim}|${extra.join(',')}`;
+    let c = this._sigCache;
+    // Re-scan all states only when the watched set may have changed: other config, a watched entity
+    // disappeared, or once a minute to pick up newly added entities. Otherwise read the cached ids.
+    if (!c || c.key !== key || Date.now() - c.t > 60000 || c.ids.some((id) => !states[id])) {
+      const ids = [];
+      for (const id of Object.keys(states)) if (id.includes(p) || id === clim || extra.includes(id)) ids.push(id);
+      c = this._sigCache = { key, ids, t: Date.now() };
     }
+    for (const id of c.ids) { const s = states[id]; if (s) parts.push(id, s.state, s.attributes.current_position); }
     return parts.join('|');
   }
 
@@ -521,7 +570,16 @@ class Geely3DCard extends HTMLElement {
     let imgs = '';
     const rp = P.cdn ? ' referrerpolicy="no-referrer"' : '';
     if (P.single) imgs = `<img draggable="false" alt="" src="${this._esc(P.single)}" data-f="0">`;
-    else for (let i = 1; i <= N; i++) imgs += `<img draggable="false" alt="" src="${this._esc(this._frameSrc(i))}" data-f="${i - 1}"${rp}>`;
+    else {
+      const first = Math.min(Math.max(P.start, 1), Math.max(N, 1));
+      for (let i = 1; i <= N; i++) {
+        const src = this._esc(this._frameSrc(i));
+        // The visible start frame loads first; the rest are filled in once it has arrived.
+        imgs += i === first
+          ? `<img draggable="false" alt="" src="${src}" data-f="${i - 1}" fetchpriority="high" decoding="async"${rp}>`
+          : `<img draggable="false" alt="" data-src="${src}" data-f="${i - 1}" decoding="async"${rp}>`;
+      }
+    }
     if (!N) imgs = '<div class="ph"><ha-icon icon="mdi:car-side"></ha-icon></div>';
     if (!this._cdnErrBound) {
       this._cdnErrBound = true;
@@ -650,6 +708,10 @@ class Geely3DCard extends HTMLElement {
   .btn { background:var(--zc-pan2); }
   .btn.sel { background:var(--zc-blue); color:#fff; }
   .muted { color:var(--zc-mut); font-size:12px; }
+  .upd .fresh { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .upd .fresh.stale { color:var(--zc-amber); }
+  .upd .fresh ha-icon { --mdc-icon-size:15px; }
+  .eta { margin-top:2px; }
   .modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:20; backdrop-filter:blur(2px); }
   .modal.show { display:flex; }
   .map-modal { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:15; backdrop-filter:blur(2px); padding:10px; box-sizing:border-box; }
@@ -796,16 +858,22 @@ class Geely3DCard extends HTMLElement {
       pcStatus: $('.pc-status'), pcFoot: $('.pc-foot') };
     this._applyStatic();
     this._imgs = [...root.querySelectorAll('.frames img')];
-    let loaded = 0;
     if (!this._imgs.length) this._el.loading.remove();
-    this._imgs.forEach((im) => {
-      const done = () => { if (++loaded >= this._imgs.length && this._el.loading) this._el.loading.remove(); };
-      if (im.complete && im.naturalWidth > 0) done();
+    const firstImg = this._imgs.find((im) => im.hasAttribute('src'));
+    if (firstImg) {
+      const done = () => {
+        if (this._el.loading) this._el.loading.remove();
+        this._loadRestFrames();
+      };
+      if (firstImg.complete && firstImg.naturalWidth > 0) done();
       else {
-        im.addEventListener('load', done, { once: true });
-        im.addEventListener('error', done, { once: true });
+        firstImg.addEventListener('load', done, { once: true });
+        firstImg.addEventListener('error', done, { once: true });
       }
-    });
+      // Never hold the other frames back for long, even if the first one is slow.
+      clearTimeout(this._restTimer);
+      this._restTimer = setTimeout(() => this._loadRestFrames(), 2500);
+    }
     const st = this._el.stage;
     if (P.studio) { st.classList.add('studio'); st.style.setProperty('--zc-studio', P.studio); }
     if (N > 1) { this._showFrame(); this._setupDrag(); }
@@ -839,10 +907,22 @@ class Geely3DCard extends HTMLElement {
   }
 
   /* ---------- rotation ---------- */
+  _loadRestFrames() {
+    if (!this._imgs || this._restLoaded) return;
+    this._restLoaded = true;
+    clearTimeout(this._restTimer); this._restTimer = null;
+    const go = () => { for (const im of this._imgs) this._ensureSrc(im); };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 1000 });
+    else setTimeout(go, 0);
+  }
+  _ensureSrc(im) {
+    if (im && !im.getAttribute('src') && im.dataset.src) { im.setAttribute('src', im.dataset.src); im.removeAttribute('data-src'); }
+  }
   _showFrame() {
     const N = this._prof.frames;
     const f = ((Math.round(this._pos) % N) + N) % N;
     if (f === this._cur) return;
+    this._ensureSrc(this._imgs[f]);
     if (this._cur != null && this._imgs[this._cur]) this._imgs[this._cur].classList.remove('on');
     this._imgs[f] && this._imgs[f].classList.add('on');
     this._cur = f;
@@ -891,10 +971,74 @@ class Geely3DCard extends HTMLElement {
     ev.detail = { entityId };
     this.dispatchEvent(ev);
   }
+  /* ---------- command gate ---------- */
+  _isCarCall(domain, data) {
+    if (!data || !data.entity_id || !this._cfg) return false;
+    const ids = Array.isArray(data.entity_id) ? data.entity_id : [data.entity_id];
+    const p = `.${this._cfg.prefix}_`, clim = this._climateId();
+    // Refresh Data reads the car rather than commanding it, so it is never held back.
+    return ids.some((id) => (String(id).includes(p) || id === clim) && id !== this._id('button', 'refresh_data'));
+  }
+  _isNoop(domain, service, data) {
+    const id = data && typeof data.entity_id === 'string' ? data.entity_id : null;
+    const s = id && this._s(id);
+    if (!s) return false;
+    const st = String(s.state);
+    if (domain === 'switch' && service === 'turn_on') return st === 'on';
+    if (domain === 'switch' && service === 'turn_off') return st === 'off';
+    if (domain === 'select' && service === 'select_option') return st === String(data.option);
+    if (domain === 'lock' && service === 'lock') return st === 'locked';
+    if (domain === 'lock' && service === 'unlock') return st === 'unlocked';
+    if (domain === 'cover' && service === 'open_cover') return st === 'open';
+    if (domain === 'cover' && service === 'close_cover') return st === 'closed' && !((s.attributes && s.attributes.current_position) > 0);
+    return false;
+  }
+  _gateRun(task, car) {
+    const g = GEC_gate(this._cfg.prefix);
+    const gap = Math.round(Number(this._cfg.command_cooldown || 0) * 1000);
+    g.pending++;
+    const run = async () => {
+      try {
+        if (car && gap > 0) {
+          const wait = g.last + gap - Date.now();
+          if (wait > 0) await this._pcDelay(wait);
+        }
+        return await task();
+      } finally {
+        if (car) g.last = Date.now();
+        g.pending--;
+      }
+    };
+    const p = g.tail.then(run, run);
+    g.tail = p.catch(() => {});
+    return p;
+  }
+  _gateBusy(car) {
+    const g = GEC_gate(this._cfg.prefix);
+    const gap = Math.round(Number(this._cfg.command_cooldown || 0) * 1000);
+    return g.pending > 0 || (car && gap > 0 && Date.now() - g.last < gap);
+  }
   _svc(domain, service, data, msgKey) {
-    this._hass.callService(domain, service, data).then(
-      () => this._toast(this._t(msgKey || 't_sent')),
-      (err) => this._toast(this._t('t_err', { m: (err && err.message) || this._t('t_failed') })));
+    if (this._isNoop(domain, service, data)) { this._toast(this._t('t_noop')); return Promise.resolve(false); }
+    const car = this._isCarCall(domain, data);
+    if (this._gateBusy(car)) this._toast(this._t('t_queued'));
+    const gap = Math.max(1000, Math.round(Number(this._cfg.command_cooldown || 0) * 1000));
+    return this._gateRun(async () => {
+      let err = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await this._hass.callService(domain, service, data);
+          this._toast(this._t(msgKey || 't_sent'));
+          return true;
+        } catch (e) {
+          err = e;
+          if (!car || attempt === 1 || !this._pcIsBusyErr(e)) break;
+          await this._pcDelay(gap);
+        }
+      }
+      this._toast(this._t('t_err', { m: (err && err.message) || this._t('t_failed') }));
+      return false;
+    }, car);
   }
   _confirm(text, fn) { this._pending = fn; this._el.modal.querySelector('p').textContent = text; this._el.modal.classList.add('show'); }
   _closeModal() { this._pending = null; this._el.modal.classList.remove('show'); }
@@ -1088,6 +1232,7 @@ class Geely3DCard extends HTMLElement {
     Promise.resolve().then(() => {
       this._built = false;
       this._cur = null;
+      this._restLoaded = false;
       if (this.shadowRoot) this.shadowRoot.innerHTML = '';
       if (this._hass) this.hass = this._hass;
     });
@@ -1443,6 +1588,18 @@ class Geely3DCard extends HTMLElement {
       return hc === 'h23' || hc === 'h24';
     } catch (e) { return this._lang === 'he'; }
   }
+  _etaClock(iso) {
+    if (!iso) return null;
+    const t = Date.parse(iso);
+    if (!isFinite(t) || t < Date.now() - 5 * 60000) return null;
+    const h = this._hass;
+    const tz = h && h.locale && h.locale.time_zone === 'server' && h.config && h.config.time_zone ? h.config.time_zone : undefined;
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz }).formatToParts(new Date(t));
+      const get = (k) => (parts.find((p) => p.type === k) || {}).value || '00';
+      return this._fmtClock(`${get('hour')}:${get('minute')}`);
+    } catch (e) { return null; }
+  }
   _fmtClock(hhmm) {
     const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
     if (!m) return '';
@@ -1687,7 +1844,7 @@ class Geely3DCard extends HTMLElement {
   }
   _pcIsBusyErr(err) {
     const m = String((err && (err.message || err.error || err)) || '').toLowerCase();
-    return m.includes('not yet been executed') || m.includes('send the command later');
+    return m.includes('not yet been executed') || m.includes('send the command later') || /\b8070\b/.test(m);
   }
   _pcDelay(ms) {
     if (!ms || ms <= 0) return Promise.resolve();
@@ -1725,10 +1882,15 @@ class Geely3DCard extends HTMLElement {
     if (sheet) sheet.classList.add('pc-busy');
     if (this._el.pcFoot) this._el.pcFoot.querySelectorAll('button').forEach((b) => { b.disabled = true; });
   }
-  async _pcRun(calls, msgKey) {
-    if (this._pcBusy) return;
-    if (!calls.length) { this._toast(this._t(msgKey)); this._closePrecond(); return; }
+  _pcRun(calls, msgKey) {
+    if (this._pcBusy) return Promise.resolve();
+    if (!calls.length) { this._toast(this._t(msgKey)); this._closePrecond(); return Promise.resolve(); }
+    const car = calls.some((c) => c[0] === 'climate' || c[0] === 'switch' || c[0] === 'select');
     this._pcBusy = true;
+    // The whole sequence holds the car's command queue, so a tap elsewhere waits for it.
+    return this._gateRun(() => this._pcRunSeq(calls, msgKey), car);
+  }
+  async _pcRunSeq(calls, msgKey) {
     this._pcStatus = { kind: '', text: this._t('pc_sending', { n: 1, t: calls.length }) };
     this._pcSetProgress(1, calls.length);
     const failed = [];
@@ -1833,9 +1995,21 @@ class Geely3DCard extends HTMLElement {
     if (eng === 'on' || eng === 'running') sub.push('· ' + T('engine_on'));
     else if (eng) sub.push('· ' + T('parked'));
     E.sub.innerHTML = sub.join(' ');
-    const upd = this._rel(this._v(I('last_updated')));
-    const rep = this._rel(this._v(I('car_reported_at')));
-    E.upd.innerHTML = upd ? `<span data-more="${esc(I('last_updated'))}" style="cursor:pointer" title="${rep ? esc(T('car_reported', { t: rep })) : ''}">${esc(T('updated', { t: upd }))}</span>` : '';
+    // Freshness: the car's own report time (Car Reported At). Last Updated is only the integration's
+    // poll clock and moves on every poll even when the car has said nothing for hours.
+    const repIso = this._v(I('car_reported_at')), syncIso = this._v(I('last_updated'));
+    const freshIso = repIso || syncIso;
+    const freshT = freshIso ? Date.parse(freshIso) : NaN;
+    const stale = isFinite(freshT) && this._cfg.stale_minutes > 0 && (Date.now() - freshT) > this._cfg.stale_minutes * 60000;
+    if (isFinite(freshT)) {
+      const rel = this._rel(freshIso), syncRel = this._rel(syncIso);
+      const label = repIso ? T('reported', { t: rel }) : T('updated', { t: rel });
+      const title = repIso && syncRel ? T('synced', { t: syncRel }) : '';
+      const moreId = repIso ? I('car_reported_at') : I('last_updated');
+      E.upd.innerHTML = `<span class="fresh${stale ? ' stale' : ''}" data-more="${esc(moreId)}" style="cursor:pointer" title="${esc(title)}">`
+        + (stale ? `<ha-icon icon="mdi:clock-alert-outline"></ha-icon><b>${esc(T('stale'))}</b> · ` : '')
+        + `${esc(label)}</span>`;
+    } else E.upd.innerHTML = '';
 
     // chips
     const chips = [];
@@ -1852,8 +2026,16 @@ class Geely3DCard extends HTMLElement {
       if (s && (s.state === 'open' || s.state === 'opening' || (s.attributes.current_position || 0) > 0))
         chips.push(`<span class="chip bad" data-more="${esc(s.entity_id)}"><ha-icon icon="mdi:window-open-variant"></ha-icon>${T(key)}</span>`);
     }
-    const days = this._n(I('days_to_service')), dist = this._n(I('distance_to_service'));
-    if (days != null && days <= this._cfg.service_days) {
+    let days = this._n(I('days_to_service'));
+    const dist = this._n(I('distance_to_service'));
+    const warnId = this._first('binary_sensor', ['service_warning', 'service_due', 'maintenance_warning']);
+    const warn = warnId ? (this._v(warnId) == null ? null : this._on(warnId)) : null;
+    // Some cars send 0 or 1 day as a placeholder while thousands of km remain (geely-connect #130).
+    // Ignore such a day count unless the car's own service warning (if exposed) says it is due.
+    if (days != null && days <= 1 && warn !== true && (warn === false || (dist != null && dist > this._cfg.service_km))) days = null;
+    if (warn === true && (days == null || days > this._cfg.service_days) && (dist == null || dist > this._cfg.service_km)) {
+      chips.push(`<span class="chip bad" data-more="${esc(warnId)}"><ha-icon icon="mdi:wrench"></ha-icon>${T('service_due')}</span>`);
+    } else if (days != null && days <= this._cfg.service_days) {
       const t = days < 0 ? T('service_overdue') : days === 0 ? T('service_today') : days === 1 ? T('service_tomorrow') : T('service_days', { n: this._fmt(days) });
       chips.push(`<span class="chip ${days <= 0 ? 'bad' : 'warn'}" data-more="${esc(I('days_to_service'))}"><ha-icon icon="mdi:wrench"></ha-icon>${t}</span>`);
     } else if (dist != null && dist <= this._cfg.service_km) {
@@ -1896,11 +2078,17 @@ class Geely3DCard extends HTMLElement {
     const chgBtns = this._chgButtonsHtml();
     if (showChg) {
       const pw = this._n(I('charging_power')), ttf = this._n(I('time_to_full_charge'));
+      const charged = !charging && bat != null && bat >= 100;
       const ttfS = ttf == null ? '—' : ttf >= 60 ? `${Math.floor(ttf / 60)}:${String(Math.round(ttf % 60)).padStart(2, '0')} ${T('h')}` : `${this._fmt(ttf)} ${T('min')}`;
+      const eta = charging ? this._etaClock(this._v(I('charge_complete'))) : null;
+      const right = charged
+        ? `<div class="big">${this._fmt(bat)}%</div><div class="muted">${T('plugged')}</div>`
+        : `<div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div>`
+          + (eta ? `<div class="muted eta" data-more="${esc(I('charge_complete'))}">${esc(T('eta', { t: '\u2068' + eta + '\u2069' }))}</div>` : '');
       tiles.push(`<div class="tile wide" data-more="${esc(I('charging_power'))}" style="border-color:color-mix(in srgb, var(--zc-teal) 45%, transparent)">
-        <div class="lbl" style="color:var(--zc-teal)"><ha-icon icon="mdi:ev-plug-type2"></ha-icon>${T(charging ? 'charging' : 'plugged')}</div>
+        <div class="lbl" style="color:var(--zc-teal)"><ha-icon icon="${charged ? 'mdi:battery-check' : 'mdi:ev-plug-type2'}"></ha-icon>${T(charging ? 'charging' : charged ? 'charged' : 'plugged')}</div>
         <div class="temps"><div><div class="big">${this._fmt(pw, 1)}<small>${T('kw')}</small></div><div class="muted">${T('power')}</div></div>
-        <div><div class="big"><bdi>${ttfS}</bdi></div><div class="muted">${T('to_full')}</div></div></div>${chgBtns}</div>`);
+        <div>${right}</div></div>${chgBtns}</div>`);
     } else if (chgBtns) {
       tiles.push(`<div class="tile wide" style="border-color:color-mix(in srgb, var(--zc-mut) 45%, transparent)">
         <div class="lbl" style="color:var(--zc-mut)"><ha-icon icon="mdi:power-plug-off-outline"></ha-icon>${T('unplugged')}</div>${chgBtns}</div>`);
@@ -2032,6 +2220,7 @@ const GEC_EDITOR_I18N = {
     opt_time_24: '24-hour',
     opt_time_12: '12-hour',
     opt_tire_default: 'Default (bar)',
+    stale_minutes: 'Old-data warning after (minutes, 0 = off)',
   },
   he: {
     entity_prefix: 'קידומת ישויות',
@@ -2068,6 +2257,7 @@ const GEC_EDITOR_I18N = {
     opt_time_24: '24 שעות',
     opt_time_12: '12 שעות',
     opt_tire_default: 'ברירת מחדל (bar)',
+    stale_minutes: 'אזהרת נתונים ישנים אחרי (דקות, 0 = כבוי)',
   },
 };
 
@@ -2167,6 +2357,7 @@ class Geely3DCardEditor extends HTMLElement {
         { value: '24h', label: t('opt_time_24') },
         { value: '12h', label: t('opt_time_12') },
       ] } } },
+      { name: 'stale_minutes', selector: { number: { min: 0, max: 1440, step: 5, mode: 'box' } } },
       { type: 'expandable', title: t('precond'), expanded: false, schema: [
         { name: 'precond_schedule_entity', selector: { entity: { domain: 'input_datetime' } } },
         { name: 'precond_schedule_enabled_entity', selector: { entity: { domain: 'input_boolean' } } },
